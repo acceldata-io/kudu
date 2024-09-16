@@ -59,6 +59,7 @@ shadowJar {
   // Excluding bouncycastle due to:
   // https://github.com/apache/hadoop/blob/4d7825309348956336b8f06a08322b78422849b1/hadoop-client-modules/hadoop-client-runtime/pom.xml#L156-L157
   exclude "org.bouncycastle:*"
+  zip64 true
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
   relocate "com.google.gradle.osdetector", "org.apache.kudu.shaded.com.google.gradle.osdetector"
   relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"
