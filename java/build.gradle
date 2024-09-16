@@ -36,6 +36,7 @@ allprojects {
   repositories {
     mavenCentral()
     mavenLocal()
+    maven { url "https://repo1.acceldata.dev/repository/odp-release/" }
   }
 
   // Read the version.txt file to set the project version
