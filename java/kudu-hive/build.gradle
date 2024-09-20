@@ -19,7 +19,8 @@ apply from: "$rootDir/gradle/shadow.gradle"
 dependencies {
   compile project(path: ":kudu-client", configuration: "shadow")
 
-  provided libs.hiveMetastore
+  provided libs.hiveMetastoreServer
+  provided libs.hiveCommon
   provided libs.slf4jApi
   // Transitively required through hive-metastore,
   // which has marked it as an optional dependency.

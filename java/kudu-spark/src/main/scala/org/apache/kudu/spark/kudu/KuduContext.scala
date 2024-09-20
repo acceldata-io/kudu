@@ -29,7 +29,6 @@ import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.Partitioner
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.unsafe.types.ByteArray
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
