@@ -1120,7 +1120,7 @@ build_oatpp(){
     -DOATPP_DISABLE_ENV_OBJECT_COUNTERS=ON \
     -DOATPP_BUILD_TESTS=OFF \
     $OATPP_SOURCE
-  make -j$PARALLEL MAKELEVEL=0 install
+  make MAKELEVEL=0 install
   popd
 }
 
