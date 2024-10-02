@@ -32,6 +32,9 @@ dependencies {
     // Exclude log4j and slf4j to ensure we use our own versions.
     exclude group: "log4j"
     exclude group: "org.slf4j"
+    exclude group: "com.fasterxml.jackson.core"
+    exclude group: "com.fasterxml.jackson.jaxrs"
+    exclude group: "com.github.pjfanning"
   }
   compile libs.protobufJavaUtil
 
@@ -42,7 +45,11 @@ dependencies {
     // Exclude log4j and slf4j to ensure we use our own versions.
     exclude group: "log4j"
     exclude group: "org.slf4j"
+    exclude group: "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider"
+    exclude group: "com.github.pjfanning"
   }
+
+  compile libs.jerseyJson
   compile libs.slf4jApi
   compile libs.log4jApi
   compile libs.log4jCore
