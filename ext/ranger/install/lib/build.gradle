@@ -14,6 +14,7 @@ dependencies {
     download "org.apache.ranger:ranger-plugins-installer:${rangerVersion}"
 }
 task downloadJars(type: Copy) {
+    dependsOn tasks.named("clean")
     from configurations.download
     into file(projectDir)
 }
