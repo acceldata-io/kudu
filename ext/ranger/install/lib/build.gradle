@@ -15,5 +15,10 @@ dependencies {
 }
 task downloadJars(type: Copy) {
     from configurations.download
-    into file(".")
+    into file(projectDir)
+}
+tasks.named("clean") {
+    doFirst {
+        delete fileTree(dir: projectDir, include: "*.jar")
+    }
 }
