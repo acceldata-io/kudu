@@ -1,0 +1,19 @@
+plugins {
+    id 'base'
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven { url "https://repo1.acceldata.dev/repository/odp-release/" }
+}
+configurations {
+    download
+}
+dependencies {
+    download "org.apache.ranger:ranger-plugins-installer:${rangerVersion}"
+}
+task downloadJars(type: Copy) {
+    from configurations.download
+    into file(".")
+}

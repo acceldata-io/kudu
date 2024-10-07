@@ -55,3 +55,4 @@ www/tracing.*
 python/kudu/*.so
 python/kudu/*.cpp
 *.py[ocd]
+ext/ranger/install/lib/.gradle
