@@ -3,15 +3,33 @@ plugins {
 }
 
 repositories {
+
     mavenCentral()
     mavenLocal()
     maven { url "https://repo1.acceldata.dev/repository/odp-release/" }
+}
+configurations.all {
+    transitive = false
 }
 configurations {
     download
 }
 dependencies {
+    download "commons-cli:commons-cli:${commonscliVersion}"
+    download "commons-collections:commons-collections:${commonscollectionsVersion}"
+    download "org.apache.commons:commons-compress:${commonscompressVersion}"
+    download "org.apache.commons:commons-configuration2:${commonsconfigurationVersion}"
+    download "org.apache.commons:commons-lang3:${commonslangVersion}"
+    download "commons-logging:commons-logging:${commonsloggingVersion}"
+    download "com.google.guava:guava:${guavaVersion}-jre"
+    download "org.apache.hadoop:hadoop-auth:${hadoopVersion}"
+    download "org.apache.hadoop:hadoop-common:${hadoopVersion}"
+    download "org.apache.htrace:htrace-core4:${htracecoreVersion}"
+    download "org.apache.ranger:credentialbuilder:${rangerVersion}"
     download "org.apache.ranger:ranger-plugins-installer:${rangerVersion}"
+    download "org.slf4j:slf4j-api:${slf4japiVersion}"
+    download "org.codehaus.woodstox:stax2-api:${stax2apiVersion}"
+    download "com.fasterxml.woodstox:woodstox-core:${woodstoxcoreVersion}"
 }
 task downloadJars(type: Copy) {
     dependsOn tasks.named("clean")
