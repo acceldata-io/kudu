@@ -1104,7 +1104,11 @@ build_postgres() {
     --without-readline \
     --without-zlib
 
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  if grep -i -e "ubuntu" -e "debian" /etc/os-release >/dev/null ; then
+      make $EXTRA_MAKEFLAGS MAKELEVEL=0 install
+  else
+      make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  fi
   popd
 }
 
