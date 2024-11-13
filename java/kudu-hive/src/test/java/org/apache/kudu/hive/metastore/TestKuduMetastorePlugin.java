@@ -111,7 +111,7 @@ public class TestKuduMetastorePlugin {
     int msPort = MetaStoreServerUtils.startMetaStore(hmsConf);
 
     clientConf = new HiveConf();
-    clientConf.setVar(HiveConf.ConfVars.METASTOREURIS, "thrift://localhost:" + msPort);
+    clientConf.setVar(HiveConf.ConfVars.METASTORE_URIS, "thrift://localhost:" + msPort);
 
     client = new HiveMetaStoreClient(clientConf);
 
@@ -327,7 +327,7 @@ public class TestKuduMetastorePlugin {
         // Also change the location to avoid MetastoreDefaultTransformer validation
         // that exists in some Hive versions.
         alteredTable.getSd().setLocation(String.format("%s/%s/%s",
-            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            clientConf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname),
             table.getDbName(), table.getTableName()));
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "FALSE");
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
@@ -341,7 +341,7 @@ public class TestKuduMetastorePlugin {
         // Also change the location to avoid MetastoreDefaultTransformer validation
         // that exists in some Hive versions.
         alteredTable.getSd().setLocation(String.format("%s/%s/%s",
-            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            clientConf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname),
             table.getDbName(), table.getTableName()));
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_PURGE_KEY, "FALSE");
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
@@ -357,7 +357,7 @@ public class TestKuduMetastorePlugin {
         // Also change the location to avoid MetastoreDefaultTransformer validation
         // that exists in some Hive versions.
         alteredTable.getSd().setLocation(String.format("%s/%s/%s",
-            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            clientConf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname),
             table.getDbName(), table.getTableName()));
         alteredTable.setTableType(TableType.EXTERNAL_TABLE.toString());
         alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "TRUE");
@@ -376,7 +376,7 @@ public class TestKuduMetastorePlugin {
         // Also change the location to avoid MetastoreDefaultTransformer validation
         // that exists in some Hive versions.
         alteredTable.getSd().setLocation(String.format("%s/%s/%s",
-            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            clientConf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname),
             table.getDbName(), table.getTableName()));
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
       }
@@ -391,7 +391,7 @@ public class TestKuduMetastorePlugin {
         // Also change the location to avoid MetastoreDefaultTransformer validation
         // that exists in some Hive versions.
         alteredTable.getSd().setLocation(String.format("%s/%s/%s",
-            clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+            clientConf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname),
             table.getDbName(), table.getTableName()));
         client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
       }
@@ -401,7 +401,7 @@ public class TestKuduMetastorePlugin {
       // Also change the location to avoid MetastoreDefaultTransformer validation
       // that exists in some Hive versions.
       table.getSd().setLocation(String.format("%s/%s/%s",
-          clientConf.get(HiveConf.ConfVars.METASTOREWAREHOUSE.varname),
+          clientConf.get(HiveConf.ConfVars.METASTORE_WAREHOUSE.varname),
           table.getDbName(), table.getTableName()));
       try {
         client.alter_table(table.getDbName(), table.getTableName(), table);
