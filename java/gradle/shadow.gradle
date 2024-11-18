@@ -20,7 +20,8 @@
 
 import org.gradle.api.internal.artifacts.publish.ArchivePublishArtifact
 
-apply plugin: "com.github.johnrengelman.shadow"
+//apply plugin: "com.github.johnrengelman.shadow"
+apply plugin: "com.gradleup.shadow"
 
 knows.enabled = false // Disable the "easter egg" knows task.
 knows.group = "" // Hide the "easter egg" knows task.
@@ -32,9 +33,9 @@ ext {
 }
 
 // Configure a shaded jar to replace the default jar
-shadowJar.classifier = null // Configure shadow jar to have the default classifier.
+//shadowJar.classifier = null // Configure shadow jar to have the default classifier.
 jar.finalizedBy(shadowJar)  // Generate the shaded jar anytime the jar task is run.
-jar.classifier = "unshaded" // Add an unshaded classifier to the default jar.
+//jar.classifier = "unshaded" // Add an unshaded classifier to the default jar.
 
 // Add the shadowJar to the published artifacts.
 artifacts {
