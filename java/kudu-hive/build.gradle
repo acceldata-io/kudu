@@ -18,7 +18,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   implementation project(path: ":kudu-client", configuration: "shadow")
-
+  implementation libs.hiveMetastoreServer
   implementation libs.hiveMetastore
   compileOnly libs.slf4jApi
   // Transitively required through hive-metastore,
