@@ -38,7 +38,7 @@ dependencies {
   implementation "com.google.code.gson:gson:2.11.0"
   implementation "gradle.plugin.cz.alenkacz:gradle-scalafmt:1.16.2"
   implementation "com.google.guava:guava:33.4.0-jre"
-  implementation "me.champeau.gradle:jmh-gradle-plugin:0.5.3"
+  implementation "me.champeau.jmh:jmh-gradle-plugin:0.7.2"
 }
 
 // Compiler configuration
