@@ -145,6 +145,7 @@ record_result() {
   local ITER=$3
   local VALUE=$4
   if [ $BENCHMARK_MODE = $MODE_JENKINS ]; then
+    # TODO: ambari-python-wrap in the below line?
     python write-jobs-stats-to-mysql.py $JOB_NAME $BUILD_IDENTIFIER $TEST_NAME $ITER $VALUE
   else
     local STATS_FILE="$OUTDIR/$LOCAL_STATS_BASE-$TEST_NAME.tsv"
@@ -156,6 +157,7 @@ record_result() {
 load_stats() {
   local TEST_NAME="$1"
   if [ "$BENCHMARK_MODE" = "$MODE_JENKINS" ]; then
+    # TODO: ambari-python-wrap in the below line?
     python get-job-stats-from-mysql.py $TEST_NAME $STATS_DAYS_TO_FETCH
   else
     # Convert MySQL wildcards to shell wildcards.

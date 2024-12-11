@@ -56,7 +56,7 @@ record_result() {
   local VALUE=$3
   if [ -n "$JOB_NAME" ]; then
     # Jenkins.
-    python $RECORD_STATS_SCRIPT $JOB_NAME $BUILD_NUMBER $TEST_NAME $ITER $VALUE
+    ambari-python-wrap $RECORD_STATS_SCRIPT $JOB_NAME $BUILD_NUMBER $TEST_NAME $ITER $VALUE
   else
     # Running locally.
     local STATS_FILE="$OUTDIR/tpch-$TEST_NAME.tsv"
