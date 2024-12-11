@@ -27,6 +27,7 @@ set -xe
 set -o pipefail
 
 function install_python_packages() {
+# TODO : ambari wrap change needed below
   PYTHON_VERSION=$(python --version 2>&1 | cut -d' ' -f2)
   PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f1)
   PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f2)
@@ -37,9 +38,11 @@ function install_python_packages() {
   if [[ "$PYTHON_MAJOR" == "2" && "$PYTHON_MINOR" == "7" ]]; then
     # The standard get-pip.py URL no longer supports Python 2.7,
     # so we need to use the version specific one.
+#   TODO : ambari wrap change needed below
     curl https://bootstrap.pypa.io/pip/2.7/get-pip.py | python
   else
     # Use a stable version of pip that works with Python 2 and 3.
+#   TODO : ambari wrap change needed below
     curl https://bootstrap.pypa.io/get-pip.py | python - "pip < 20.3.4"
   fi
   pip install --upgrade \
