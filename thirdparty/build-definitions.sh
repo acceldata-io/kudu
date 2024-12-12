@@ -743,6 +743,7 @@ build_curl() {
     --disable-httpsrr \
     --disable-gopher \
     --disable-imap \
+    --disable-ipfs \
     --disable-ipv6 \
     --disable-ldap \
     --disable-ldaps \
@@ -758,6 +759,7 @@ build_curl() {
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
+    --disable-websockets \
     --without-apple-idn \
     --without-brotli \
     --without-libidn2 \
