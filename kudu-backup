@@ -1,0 +1,67 @@
+#!/bin/sh
+
+OP=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+shift
+
+if ! command -v spark-submit >/dev/null; then
+    printf "'spark-submit' not found\n"
+    printf "Spark 3 is required to backup or restore Kudu tables\n"
+    exit 1
+fi
+
+if ! command -v kudu >/dev/null; then
+    printf "'kudu' not available in PATH\n"
+    printf "Run this script on a machine with kudu installed\n"
+    exit 1
+fi
+
+if [ "$OP" != "backup" ] && [ "$OP" != "restore" ]; then
+    printf "Invalid option '%s'. Valid options are 'backup' or 'restore'\n" "$OP"
+    printf "Either 'backup' or 'restore' must be the first argument when calling %s\n" "$0"
+    exit 1
+fi
+
+OVERRIDE_PATH=false
+
+for arg in "$@"; do
+    if [ "$arg" = "--rootPath" ]; then
+        OVERRIDE_PATH=true
+        break
+    fi
+done
+
+if ! "$OVERRIDE_PATH"; then
+    BACKUP_PATH="--rootPath hdfs:///kudu_backups"
+fi
+
+JARS=$(find /usr/odp/"$(odp-select --version)"/kudu/ -name "kudu-backup*.jar" | grep -E "^/usr/odp/$(odp-select --version)/kudu/jars/kudu-backup[[:digit:]]+_[[:digit:]]+\.[[:digit:]]+-[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+(-all)?.jar$")
+NUM_JARS=$( printf "%s" "$JARS" | wc -w)
+
+if [ "$NUM_JARS" -eq 0 ]; then
+    printf "No jars found\n" >&2
+    exit 1
+elif [ "$NUM_JARS" -eq 1 ]; then
+    JAR=$JARS
+elif [ "$NUM_JARS" -gt 1 ]; then
+    for jar in $JARS; do
+        JAR="$jar"
+        if printf "%s" "$jar" | grep -F "\-all.jar"; then
+            break
+        fi
+    done
+fi
+
+if [ -f /etc/kudu/conf/master.conf ]; then
+    MASTERS=$(awk -F= '$1 ~ "--master_addresses" {print $2}' /etc/kudu/conf/master.conf)
+else
+    printf "/etc/kudu/conf/master.conf not found. Is Kudu installed?\n"
+    exit 1
+fi
+
+
+#BACKUP_PATH has been left unquoted so that if it's empty, it will not be passed
+if [ "$OP" = "backup" ]; then
+    spark-submit --class org.apache.kudu.backup.KuduBackup "$JAR" --kuduMasterAddresses "$MASTERS" $BACKUP_PATH "$@"
+elif [ "$OP" = "restore" ]; then
+    spark-submit --class org.apache.kudu.backup.KuduRestore "$JAR" --kuduMasterAddresses "$MASTERS" $BACKUP_PATH "$@"
+fi
