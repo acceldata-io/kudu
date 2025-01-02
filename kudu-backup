@@ -4,20 +4,26 @@ OP=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 shift
 
 if ! command -v spark-submit >/dev/null; then
-    printf "'spark-submit' not found\n"
-    printf "Spark 3 is required to backup or restore Kudu tables\n"
+    printf "'spark-submit' not found\n" >&2
+    printf "Spark 3 is required to backup or restore Kudu tables\n" >&2
     exit 1
 fi
 
 if ! command -v kudu >/dev/null; then
-    printf "'kudu' not available in PATH\n"
-    printf "Run this script on a machine with kudu installed\n"
+    printf "'kudu' not available in PATH\n" >&2
+    printf "Run this script on a machine with kudu installed\n" >&2
+    exit 1
+fi
+
+if [ "$USER" != "kudu" ]; then
+    printf "Backing up tables must be done as the kudu user\n." >&2
+    printf "Your user is: '%s'\n" "$USER" >&2
     exit 1
 fi
 
 if [ "$OP" != "backup" ] && [ "$OP" != "restore" ]; then
-    printf "Invalid option '%s'. Valid options are 'backup' or 'restore'\n" "$OP"
-    printf "Either 'backup' or 'restore' must be the first argument when calling %s\n" "$0"
+    printf "Invalid option '%s'. Valid options are 'backup' or 'restore'\n" "$OP" >&2
+    printf "Either 'backup' or 'restore' must be the first argument when calling %s\n" "$0" >&2
     exit 1
 fi
 
@@ -54,7 +60,7 @@ fi
 if [ -f /etc/kudu/conf/master.conf ]; then
     MASTERS=$(awk -F= '$1 ~ "--master_addresses" {print $2}' /etc/kudu/conf/master.conf)
 else
-    printf "/etc/kudu/conf/master.conf not found. Is Kudu installed?\n"
+    printf "/etc/kudu/conf/master.conf not found. Is Kudu installed?\n" >&2
     exit 1
 fi
 
