@@ -18,7 +18,12 @@
 import datetime
 import six
 from decimal import Decimal, getcontext
-from pytz import utc
+import sys
+if sys.version_info >= (3,9):
+    from zoneinfo import ZoneInfo
+    utc = ZoneInfo("UTC")
+else:
+    from pytz import utc
 
 
 def _epoch():
