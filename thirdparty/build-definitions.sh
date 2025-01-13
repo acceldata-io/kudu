@@ -166,7 +166,9 @@ build_or_find_python() {
   if [ -n "$PYTHON_EXECUTABLE" ]; then
     return
   fi
-
+  if command -v ambari-python-wrap >/dev/null; then
+    PYTHON_EXECUTABLE=$(command -v ambari-python-wrap)
+  fi
   # Build Python only if necessary.
   if [[ $(python3 -V 2>&1) =~ "Python 3." ]]; then
     PYTHON_EXECUTABLE=$(which python3)
