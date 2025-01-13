@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env ambari-python-wrap
 
 ##===--- fix_includes.py - rewrite source files based on iwyu output ------===##
 #

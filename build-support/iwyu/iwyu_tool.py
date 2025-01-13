@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env ambari-python-wrap
 
 # This file has been imported into the Kudu source tree from
 # the IWYU source tree as of version 0.8
