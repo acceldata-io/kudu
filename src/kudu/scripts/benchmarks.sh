@@ -145,7 +145,7 @@ record_result() {
   local ITER=$3
   local VALUE=$4
   if [ $BENCHMARK_MODE = $MODE_JENKINS ]; then
-    python write-jobs-stats-to-mysql.py $JOB_NAME $BUILD_IDENTIFIER $TEST_NAME $ITER $VALUE
+    ambari-python-wrap write-jobs-stats-to-mysql.py $JOB_NAME $BUILD_IDENTIFIER $TEST_NAME $ITER $VALUE
   else
     local STATS_FILE="$OUTDIR/$LOCAL_STATS_BASE-$TEST_NAME.tsv"
     # Note: literal tabs in below string.
@@ -156,7 +156,7 @@ record_result() {
 load_stats() {
   local TEST_NAME="$1"
   if [ "$BENCHMARK_MODE" = "$MODE_JENKINS" ]; then
-    python get-job-stats-from-mysql.py $TEST_NAME $STATS_DAYS_TO_FETCH
+    ambari-python-wrap get-job-stats-from-mysql.py $TEST_NAME $STATS_DAYS_TO_FETCH
   else
     # Convert MySQL wildcards to shell wildcards.
     local TEST_NAME=$(echo $TEST_NAME | perl -pe 's/%/*/g')
