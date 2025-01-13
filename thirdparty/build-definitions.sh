@@ -177,6 +177,10 @@ build_llvm() {
   local BUILD_TYPE=$1
 
   if [ -z "$PYTHON_EXECUTABLE" ]; then
+    if command -v ambari-python-wrap >/dev/null; then
+      PYTHON_EXECUTABLE=$(command -v ambari-python-wrap)
+    fi
+    # Build Python only if necessary.
     if [[ $(ambari-python-wrap -V 2>&1) =~ "Python 3." ]]; then
       PYTHON_EXECUTABLE=$(which ambari-python-wrap)
     elif [[ $(python3 -V 2>&1) =~ "Python 3." ]]; then

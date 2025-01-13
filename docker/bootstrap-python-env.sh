@@ -27,7 +27,7 @@ set -xe
 set -o pipefail
 
 function install_python_packages() {
-  PYTHON_VERSION=$(python --version 2>&1 | cut -d' ' -f2)
+  PYTHON_VERSION=$(ambari-python-wrap --version 2>&1 | cut -d' ' -f2)
   PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f1)
   PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f2)
 
@@ -37,12 +37,12 @@ function install_python_packages() {
   if [[ "$PYTHON_MAJOR" == "2" && "$PYTHON_MINOR" == "7" ]]; then
     # The standard get-pip.py URL no longer supports Python 2.7,
     # so we need to use the version specific one.
-    curl https://bootstrap.pypa.io/pip/2.7/get-pip.py | python
+    curl https://bootstrap.pypa.io/pip/2.7/get-pip.py | ambari-python-wrap
   else
     # Use a stable version of pip that works with Python 2 and 3.
-    curl https://bootstrap.pypa.io/get-pip.py | python - "pip < 20.3.4"
+    curl https://bootstrap.pypa.io/get-pip.py | ambari-python-wrap - "pip < 20.3.4"
   fi
-  pip install --upgrade \
+  ambari-python-wrap -m pip install --upgrade \
     cython \
     setuptools \
     setuptools_scm
