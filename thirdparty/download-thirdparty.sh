@@ -276,13 +276,14 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/rapidjson-assertions-for-clang-warnings.patch" \
  "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch"
 
-SQUEASEL_PATCHLEVEL=2
+SQUEASEL_PATCHLEVEL=3
 fetch_and_patch \
  squeasel-${SQUEASEL_VERSION}.tar.gz \
  $SQUEASEL_SOURCE \
  $SQUEASEL_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/squeasel-handle-openssl-errors.patch" \
- "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch"
+ "patch -p1 < $TP_DIR/patches/squeasel-tls-min-version.patch" \
+ "patch -p1 < $TP_DIR/patches/squeasel-support-get-bound-addresses-for-ipv6.patch"
 
 MUSTACHE_PATCHLEVEL=0
 fetch_and_patch \
