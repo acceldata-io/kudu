@@ -73,6 +73,11 @@ DEFINE_bool(use_system_auth_to_local, kDefaultSystemAuthToLocal,
             "'kudu/foo.example.com@EXAMPLE' will map to 'kudu'.");
 TAG_FLAG(use_system_auth_to_local, advanced);
 
+DEFINE_bool(ignore_auth_mapping, false, "When true, sends the whole principal instead of trying to map it first");
+TAG_FLAG(ignore_auth_mapping, evolving);
+
+
+
 DEFINE_string(principal, "kudu/_HOST",
               "Kerberos principal that this daemon will log in as. The special token "
               "_HOST will be replaced with the FQDN of the local host.");
@@ -418,6 +423,16 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
     });
   char buf[1024];
   krb5_error_code rc = KRB5_LNAME_NOTRANS;
+  char principal_name[1024];
+  if (FLAGS_ignore_auth_mapping) {
+        KRB5_RETURN_NOT_OK_PREPEND(krb5_unparse_name(context, principal.c_str(), &principal_name),
+                        "could not get principal from string");
+        if(strlen(buf) == 0){
+                return Status::InvalidArgument("principal is empty");
+        }
+        local_name->assign(principal_name);
+        return Status::Ok();
+  }
   if (FLAGS_use_system_auth_to_local) {
     rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
   }
@@ -543,3 +558,4 @@ string GetKrb5ConfigFile() {
 #if defined(__APPLE__)
 #pragma GCC diagnostic pop
 #endif // #if defined(__APPLE__)
+
