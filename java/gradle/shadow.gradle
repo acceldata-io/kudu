@@ -51,6 +51,11 @@ configurations.archives.artifacts.removeAll {
 // location across all modules.
 shadowJar {
   zip64 true
+  dependencies {
+    // Excluding bouncycastle due to:
+    // https://github.com/apache/hadoop/blob/4d7825309348956336b8f06a08322b78422849b1/hadoop-client-modules/hadoop-client-runtime/pom.xml#L156-L157
+    exclude dependency("org.bouncycastle::.*")
+  }
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
   relocate "com.google.gradle.osdetector", "org.apache.kudu.shaded.com.google.gradle.osdetector"
   relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"
@@ -108,7 +113,7 @@ afterEvaluate {
   if (!shadowIncludeSlf4j) {
     shadowJar {
       dependencies {
-        exclude(dependency("org.slf4j:slf4j-api:.*"))
+        exclude(dependency("org.slf4j:slf4j-api::.*"))
       }
     }
   }
