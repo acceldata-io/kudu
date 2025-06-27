@@ -424,7 +424,7 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
     rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
   }
 
-  if(use_core_site){
+  if(FLAGS_use_core_site){
     auto hadoop = HadoopAuthToLocal("/etc/hadoop/conf/core-site.xml", g_krb5_ctx);
     std::string output = "";
     if(hadoop.matchPrincipalAgainstRules(principal, output) == 0){
