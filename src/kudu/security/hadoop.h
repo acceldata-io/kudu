@@ -50,7 +50,7 @@ class HadoopAuthToLocal {
 
   std::vector<std::string> coreSiteRules;
   std::vector<Rule> rules;
-  std::string defaultRealm;
+  std::string defaultRealm = "";
 
 
 

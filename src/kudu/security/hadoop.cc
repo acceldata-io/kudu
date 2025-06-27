@@ -12,9 +12,6 @@
 
 
 HadoopAuthToLocal::HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx) {
-
-
-  defaultRealm = "ADSE.COM";
   setConf(filepath);
   setKrb5Context(ctx);
 }
