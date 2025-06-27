@@ -49,7 +49,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
-
+#include "hadoop.h"
 #if defined(__APPLE__)
 // Almost all functions in the krb5 API are marked as deprecated in favor
 // of GSS.framework in macOS.
@@ -84,6 +84,8 @@ DEFINE_string(keytab_file, "",
               "keytab file will cause the server to kinit, and enable Kerberos "
               "to be used to authenticate RPC connections.");
 TAG_FLAG(keytab_file, stable);
+
+DEFINE_bool(use_core_site, useCoreSite,"Do some stuff");
 
 using std::mt19937;
 using std::nullopt;
@@ -421,6 +423,19 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
   if (FLAGS_use_system_auth_to_local) {
     rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
   }
+
+  if(use_core_site){
+    auto hadoop = HadoopAuthToLocal("/etc/hadoop/conf/core-site.xml", g_krb5_ctx);
+    std::string output = "";
+    if(hadoop.matchPrincipalAgainstRules(principal, output) == 0){
+      local_name->assign(output);
+      return Status::OK();
+    } 
+    if(output.empty()) {
+      return Status::NotFound("Principal mapped to empty username");
+    }
+  }
+  
   if (rc == KRB5_LNAME_NOTRANS || rc == KRB5_PLUGIN_NO_HANDLE) {
     // No name mapping specified, or krb5-based name mapping is disabled.
     //
