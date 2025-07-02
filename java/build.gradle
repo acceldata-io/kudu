@@ -70,6 +70,10 @@ subprojects {
   configurations.all {
     resolutionStrategy {
       force libs.guava
+      // Force Jackson libraries to version 2.16.1 to override transitive dependencies
+      force "com.fasterxml.jackson.core:jackson-core:2.16.1"
+      force "com.fasterxml.jackson.core:jackson-databind:2.16.1"
+      force "com.fasterxml.jackson.core:jackson-annotations:2.16.1"
     }
   }
 }
