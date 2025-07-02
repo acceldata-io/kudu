@@ -29,7 +29,7 @@ versions += [
     checkstyle     : "8.36.1",
     clojure        : "1.10.3",
     clojureToolsCli: "1.0.206",
-    commonsIo      : "2.11.0",
+    commonsIo      : "2.14.0",
     errorProne     : "2.3.3",
     errorProneJavac: "9+181-r4173-1",
     gradle         : "7.6.4",
