@@ -80,7 +80,6 @@ std::optional<std::vector<HadoopAuthToLocal::Token>> HadoopAuthToLocal::tokenize
   std::size_t end = fmt.length();
   while (idx < end) {
     if (fmt[idx] == '\\' && (idx + 1) < end && fmt[idx + 1] == '$') {
-      
       idx += 2;
       tokens.push_back(Token{.type = Token::Type::literal, .text = "$"});
     } else if (fmt[idx] == '$' && (idx + 1) < end && std::isdigit(fmt[idx + 1])) {
@@ -94,7 +93,7 @@ std::optional<std::vector<HadoopAuthToLocal::Token>> HadoopAuthToLocal::tokenize
     } else {
       size_t start = idx;
       while (idx < end &&
-              (fmt[idx] != '$' || (idx + 1 >= end) || !std::isdigit(fmt[idx + 1])) &&
+              (fmt[idx] != '$' || (idx + 1 >= end) ) &&
               (fmt[idx] != '\\' || (idx + 1 >= end) || fmt[idx + 1] != '$')){
         idx++;
       }
@@ -309,6 +308,7 @@ std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> HadoopAu
 
 std::optional<HadoopAuthToLocal::Rule> HadoopAuthToLocal::initRule(const std::string &auth_rule){
   if (auth_rule.empty()){
+    LOG(ERROR) << "Unexpected empty auth rule in HadoopAuthToLocal::initRule\n";
     return std::nullopt;
   }
   std::string trimmed = auth_rule;
