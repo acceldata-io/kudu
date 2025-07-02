@@ -69,6 +69,7 @@ set(SECURITY_SRCS
   crypto.cc
   kerberos_util.cc
   gssapi.cc
+  hadoop.cc
   init.cc
   ${PORTED_X509_CHECK_HOST_CC}
   security_flags.cc

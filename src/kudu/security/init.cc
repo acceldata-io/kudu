@@ -85,7 +85,7 @@ DEFINE_string(keytab_file, "",
               "to be used to authenticate RPC connections.");
 TAG_FLAG(keytab_file, stable);
 
-DEFINE_bool(use_core_site, useCoreSite,"Do some stuff");
+DEFINE_string(core_site_path, "" ,"PATH to a core-site xml file.");
 
 using std::mt19937;
 using std::nullopt;
@@ -424,15 +424,15 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
     rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
   }
 
-  if(FLAGS_use_core_site){
-    auto hadoop = HadoopAuthToLocal("/etc/hadoop/conf/core-site.xml", g_krb5_ctx);
+  if(!FLAGS_core_site_path.empty()){
+    auto hadoop = HadoopAuthToLocal(FLAGS_core_site_path, g_krb5_ctx);
     std::string output = "";
     if(hadoop.matchPrincipalAgainstRules(principal, output) == 0){
       local_name->assign(output);
       return Status::OK();
     } 
     if(output.empty()) {
-      return Status::NotFound("Principal mapped to empty username");
+      return Status::InvalidArgument("Principal mapped to empty username");
     }
   }
   
