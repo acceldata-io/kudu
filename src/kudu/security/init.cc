@@ -425,15 +425,15 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
   }
 
   if(!FLAGS_core_site_path.empty()){
-    auto hadoop = HadoopAuthToLocal(FLAGS_core_site_path, g_krb5_ctx);
-    std::string output = "";
-    if(hadoop.matchPrincipalAgainstRules(principal, output) == 0){
+    std::optional<std::string> hadoop_short_name = HadoopAuthToLocal(FLAGS_core_site_path, g_krb5_ctx).matchPrincipalAgainstRules(principal);
+    if(hadoop_short_name.has_value()) {
+      if (hadoop_short_name.value().empty()) {
+        return Status::InvalidArgument("Principal mapped to empty username");
+      }
       local_name->assign(output);
       return Status::OK();
     } 
-    if(output.empty()) {
-      return Status::InvalidArgument("Principal mapped to empty username");
-    }
+    return Status::InvalidArgument("Principal not mapped");
   }
   
   if (rc == KRB5_LNAME_NOTRANS || rc == KRB5_PLUGIN_NO_HANDLE) {

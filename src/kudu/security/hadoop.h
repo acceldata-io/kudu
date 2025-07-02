@@ -58,15 +58,14 @@ class HadoopAuthToLocal {
   static std::optional<SedRule> parseSedRule(const std::string& sed_rule);
   static int numberOfFields(const std::string& principal);
   int fieldsMatch(const Rule &rule, const std::string& principal);
-  int matchNumberOfFields(const Rule &rule, const std::string&principal);
-  static int replaceMatchingPrincipal(const Rule& rule, const std::string& formatted_principal, std::string& output);
-  int transformPrincipal(const Rule& rule, const std::string& principal, std::string& output);
+  bool matchNumberOfFields(const Rule &rule, const std::string&principal);
+  static std::optional<std::string> replaceMatchingPrincipal(const Rule& rule, const std::string& formatted_principal);
+  std::optional<std::string> transformPrincipal(const Rule& rule, const std::string& principal);
   static std::optional<std::array<std::string, kParseFields>> parseAuthToLocalRule(const std::string &auth_rule);
   
 
-  std::optional<std::string> createFormattedPrincipal(const Rule& rule, const std::vector<std::string>& principal );
+  std::optional<std::string> createFormattedPrincipal(const Rule& rule, const std::vector<std::string>& principal_fields );
   std::optional<std::string> defaultRule(const Rule& rule, const std::string& principal, const std::string& realm);
-  //int shortNameMatchesRule(const Rule& rule, const std::string modified_principal);
 
   static bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault);
   static std::string getRealm(const std::string& principal, size_t at_pos = kAtPosDefault);
@@ -82,6 +81,6 @@ class HadoopAuthToLocal {
     HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx);
     int setConf(const std::string& filepath);
     int setKrb5Context(krb5_context& ctx);
-    int matchPrincipalAgainstRules(const std::string& principal, std::string& output);
+    std::optional<std::string> matchPrincipalAgainstRules(const std::string& principal);
     const std::vector<std::string>& getRules();
 };
