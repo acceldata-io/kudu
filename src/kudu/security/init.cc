@@ -430,7 +430,7 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
       if (hadoop_short_name.value().empty()) {
         return Status::InvalidArgument("Principal mapped to empty username");
       }
-      local_name->assign(output);
+      local_name->assign(hadoop_short_name.value());
       return Status::OK();
     } 
     return Status::InvalidArgument("Principal not mapped");
