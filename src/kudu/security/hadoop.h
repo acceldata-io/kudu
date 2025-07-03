@@ -93,12 +93,12 @@ class HadoopAuthToLocal {
   FRIEND_TEST(HadoopAuthToLocalTest, getRealmTest);
   FRIEND_TEST(HadoopAuthToLocalTest, numberOfFieldsTest);
   FRIEND_TEST(HadoopAuthToLocalTest, initRuleTest);
-  FRIEND_TEST(HadoopAuthToLocalTest, matchPrincipalAgainstRulesTest);
-  FRIEND_TEST(HadoopAuthToLocalTest, createFormattedPrincipalTest);
-
+  FRIEND_TEST(HadoopAuthToLocalTest, transformPrincipalTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, matchPrincipalAgainstAllRulesTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, threadSafeTest);
 
   public:
-    HadoopAuthToLocal();
+    HadoopAuthToLocal(); //Used for tests
     HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx);
     int loadConf(const std::string& filepath);
     int setKrb5Context(krb5_context& ctx);
