@@ -20,6 +20,7 @@
 #include <krb5/krb5.h>
 #include <optional>
 #include <regex>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -32,6 +33,7 @@ class HadoopAuthToLocal {
     std::string pattern;
     std::string replacement;
     std::string flags;
+    std::regex compiled_pattern;
   };
   struct Rule {
     int numberOfFields;
@@ -51,7 +53,7 @@ class HadoopAuthToLocal {
   std::vector<std::string> coreSiteRules_;
   std::vector<Rule> rules_;
   std::string defaultRealm_ = "";
-
+  mutable std::shared_mutex mutex_;
 
 
   static std::optional<Rule> initRule(const std::string& auth_rule);
@@ -81,6 +83,7 @@ class HadoopAuthToLocal {
     HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx);
     int setConf(const std::string& filepath);
     int setKrb5Context(krb5_context& ctx);
+    void setDefaultRealm(const std::string& realm);
     std::optional<std::string> matchPrincipalAgainstRules(const std::string& principal);
     const std::vector<std::string>& getRules();
 };
