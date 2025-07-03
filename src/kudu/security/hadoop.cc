@@ -214,7 +214,7 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
     } else if (current_char == '\\') {
       escape = true;
     } else if (current_char == delimiter) {
-      if(++part_idx >=2){
+      if(++part_idx > 2){
         LOG(ERROR) << "Sed rule has too many parts: " << sed_rule << "\n";
         return std::nullopt;
       }
