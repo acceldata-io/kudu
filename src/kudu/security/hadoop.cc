@@ -231,8 +231,11 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
   }
 
   std::string flags;
-  if (pos <= rule.size()) {
-    flags = rule.substr(pos);
+  for (; pos < rule.size(); ++pos) {
+    char current_char = rule[pos];
+    if(std::isalpha(current_char, loc)){
+      flags += current_char;
+    }
   }
 
   if (part[0].empty()) {
