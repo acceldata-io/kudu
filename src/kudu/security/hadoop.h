@@ -16,7 +16,7 @@
 // under the License.
 
 #pragma once
-
+#include <gtest/gtest_prod.h>
 #include <krb5/krb5.h>
 #include <optional>
 #include <regex>
@@ -24,7 +24,8 @@
 #include <string>
 #include <vector>
 
-
+namespace kudu{
+namespace security {
 class HadoopAuthToLocal {
 
   static constexpr std::size_t kParseFields = 4;
@@ -55,6 +56,7 @@ class HadoopAuthToLocal {
   std::string defaultRealm_ = "";
   mutable std::shared_mutex mutex_;
 
+  void setDefaultRealm(const std::string& realm);
 
   static std::optional<Rule> initRule(const std::string& auth_rule);
   static std::optional<SedRule> parseSedRule(const std::string& sed_rule);
@@ -78,12 +80,19 @@ class HadoopAuthToLocal {
   static std::optional<std::vector<Token>> tokenize(const std::string& fmt);
 
   static std::vector<std::string> extractFields(const std::string& principal);
+  
+
+  FRIEND_TEST(HadoopAuthToLocalTest, sedRuleTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, badSedRuleTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest);
 
   public:
+    HadoopAuthToLocal();
     HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx);
     int setConf(const std::string& filepath);
     int setKrb5Context(krb5_context& ctx);
-    void setDefaultRealm(const std::string& realm);
     std::optional<std::string> matchPrincipalAgainstRules(const std::string& principal);
     const std::vector<std::string>& getRules();
 };
+} // namespace security
+} // namespace kudu

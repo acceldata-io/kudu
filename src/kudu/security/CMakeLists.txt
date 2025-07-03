@@ -117,6 +117,7 @@ endif()
 
 if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
+    hadoop_tests.cc
     security-test-util.cc
     test/test_certs.cc
     test/test_pass.cc)

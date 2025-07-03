@@ -16,7 +16,8 @@
 #include <boost/property_tree/xml_parser.hpp>
 #include <boost/foreach.hpp>
 
-
+namespace kudu {
+namespace security {
 HadoopAuthToLocal::HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx) {
   setConf(filepath);
   setKrb5Context(ctx);
@@ -532,3 +533,5 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(const s
   }
   return std::nullopt;
 }
+} // namespace security
+} // namespace kudu
