@@ -1,5 +1,5 @@
-#include <cassert>
 #include <cstring>
+#include <unordered_set>
 #include <vector>
 #include <optional>
 #include <locale>
@@ -19,15 +19,16 @@
 namespace kudu {
 namespace security {
 HadoopAuthToLocal::HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx) {
-  setConf(filepath);
+  loadConf(filepath);
   setKrb5Context(ctx);
 }
 
 int HadoopAuthToLocal::setKrb5Context(krb5_context& ctx){
   std::unique_lock<std::shared_mutex> lock(mutex_);
-  char *realm;
+  char *realm = nullptr;
   krb5_error_code err = krb5_get_default_realm(ctx, &realm);
   if(err){
+    krb5_free_default_realm(ctx, realm);
     LOG(ERROR) << "Failed to get default realm from krb5 context: " << err << "\n";
     return -1;
   }
@@ -38,9 +39,7 @@ int HadoopAuthToLocal::setKrb5Context(krb5_context& ctx){
 
 }
 
-int HadoopAuthToLocal::setConf(const std::string& filepath) {
-  std::unique_lock<std::shared_mutex> lock(mutex_);
-
+int HadoopAuthToLocal::loadConf(const std::string& filepath) {
   char buffer[PATH_MAX];
   std::string canonical_path; 
   if(realpath(filepath.c_str(), buffer)){
@@ -57,33 +56,45 @@ int HadoopAuthToLocal::setConf(const std::string& filepath) {
     return -1;
   }
 
+  std::ifstream file_stream(canonical_path);
+  if(!file_stream.is_open()) {
+    LOG(ERROR) << "Failed to open HadoopAuthToLocal configuration file: " << canonical_path << "\n";
+    return -1;
+  }
+  return setRules(file_stream);
+}
+
+int HadoopAuthToLocal::setRules(std::istream& input) {
+  std::unique_lock<std::shared_mutex> lock(mutex_);
+
   boost::property_tree::ptree tree;
   try {
-      boost::property_tree::read_xml(canonical_path, tree);
+      read_xml(input, tree);
   } catch (const boost::property_tree::xml_parser_error& e) {
-     LOG(ERROR) << "Malformed XML when loading " << filepath << " which resolves to " << canonical_path << " \n";
+     LOG(ERROR) << "Malformed XML when loading from core-site.xml\n";
     return -1;
   }
   for (const auto &property : tree.get_child("configuration")){
-
     if(property.first == "property") {
       std::string name = property.second.get<std::string>("name", "");
       if (name == "hadoop.security.auth_to_local") {
-        this->coreSiteRules_ = strings::Split(property.second.get<std::string>("value",""),"\n", strings::SkipWhitespace());
+        this->coreSiteRules_ = strings::Split(
+          property.second.get<std::string>("value",""),"\n", strings::SkipWhitespace());
       }
-      if (this->coreSiteRules_.size() > 0) {
-        for (auto &rule : this->coreSiteRules_) {
-          StripWhiteSpace(&rule);
-          std::optional<Rule> new_rule = initRule(rule);
-          if (new_rule.has_value()) {
-            this->rules_.push_back(new_rule.value());
-          } else {
-            LOG(ERROR) << "Invalid rule: " << rule << "\n";
-          }
-        }
-        return 0;
-      }  
     }
+  }
+
+  if (this->coreSiteRules_.size() > 0) {
+    for (auto &rule : this->coreSiteRules_) {
+      StripWhiteSpace(&rule);
+      std::optional<Rule> new_rule = initRule(rule);
+      if (new_rule.has_value()) {
+        this->rules_.push_back(new_rule.value());
+      } else {
+        LOG(ERROR) << "Invalid rule: " << rule << "\n";
+      }
+    }
+    return 0;
   }
   return -1;
 }
@@ -178,7 +189,20 @@ std::string HadoopAuthToLocal::processJavaRegexLiterals(const std::string& input
     }
     return output;
 }
+std::string HadoopAuthToLocal::SedBackslashEscape(const std::string& input){
+  std::string regex_pattern;
+  regex_pattern.reserve(input.size() * 2);
 
+  for (size_t idx = 0; idx < input.size(); ++idx) {
+    if (input[idx] == '\\') {
+      regex_pattern += "\\\\";
+    }
+    else{
+      regex_pattern += input[idx];
+    }
+  }
+  return regex_pattern;
+}
 std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const std::string& sed_rule){
   std::locale loc("");
   if (sed_rule.empty()) {  
@@ -189,10 +213,11 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
     LOG(ERROR) << "It is: '" << sed_rule << "'\n";
     return std::nullopt;
   }
-  char delimiter = sed_rule[1];
+  const char delimiter = sed_rule[1];
+  constexpr size_t max_size = 128;
+
   std::string rule = sed_rule.substr(2); //skip the s + delimiter
   size_t pos = 0; 
-  constexpr size_t max_size = 128;
   std::string part[2];
   int part_idx = 0;
   bool escape = false;
@@ -231,10 +256,19 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
   }
 
   std::string flags;
+  static const std::unordered_set<char> allowed_flags = {'g', 'L'};
+  std::unordered_set<char> seen;
   for (; pos < rule.size(); ++pos) {
     char current_char = rule[pos];
-    if(std::isalpha(current_char, loc)){
+    if(std::isalpha(current_char, loc) && 
+      !seen.count(current_char) && 
+      allowed_flags.count(current_char)) 
+    {
       flags += current_char;
+      seen.insert(current_char);
+    } else if (seen.count(current_char)){
+      LOG(ERROR) << "Duplicate flag detected in sed rule " << sed_rule << "\n";
+      return std::nullopt;
     }
   }
 
@@ -242,18 +276,21 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
     LOG(ERROR) << "Pattern cannot be empty\n";
     return std::nullopt;
   }
+
   if (escape) {
     LOG(ERROR) << "Trailing backslash in sed rule\n";
     return std::nullopt;
   }
+
   if(!part[0].empty()) {
       try {
+        part[0] = SedBackslashEscape(part[0]);
         match_regex =  std::regex(part[0], std::regex::ECMAScript);
       } catch (const std::regex_error& e) {
         LOG(ERROR) << "Invalid sed rule pattern in rule: " << sed_rule << " - " << e.what() << "\n";
         return std::nullopt;
       }
-    }
+  }
 
 
   return SedRule{.pattern = part[0], .replacement = part[1], .flags = flags, .compiled_pattern = match_regex};
@@ -265,7 +302,7 @@ std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> HadoopAu
     LOG(WARNING) << "Empty rule provided for HadoopAuthToLocal::parseAuthToLocalRule\n";
     return std::nullopt;
   }
-  std::string prefix = "RULE:[";
+  const std::string prefix = "RULE:[";
   size_t pos = prefix.length();
   std::string number="";
   std::string format="";
@@ -338,6 +375,15 @@ std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> HadoopAu
     } else {
       regex_match += current_char;
     }
+  }
+  
+  if(auth_rule[pos - 1] != ')'){
+    LOG(ERROR) << "Expected ')' at char " << pos << ", got '" << auth_rule[pos-1] << "' instead \n";
+    return std::nullopt;
+  }
+  if(regex_match.empty()){
+    LOG(ERROR) << "Regex match string cannot be empty in rule: " << auth_rule << "\n";
+    return std::nullopt;
   }
   regex_match = processJavaRegexLiterals(regex_match);
   if (pos < auth_rule.length()){
@@ -445,7 +491,7 @@ std::optional<std::string> HadoopAuthToLocal::replaceMatchingPrincipal(const Rul
   if(!std::regex_match(formatted_principal, rule.regexMatch)){
     return std::nullopt;
   }
-  assert(rule.sedRule.has_value());
+
   if (auto sed = rule.sedRule){
     if(!sed->flags.empty()){
       if(sed->flags.find('g') != std::string::npos){
