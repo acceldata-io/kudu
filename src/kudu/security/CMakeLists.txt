@@ -136,7 +136,6 @@ endif()
 
 SET_KUDU_TEST_LINK_LIBS(
   mini_kdc
-  hadoop_tests
   security
   security_test_util)
 
