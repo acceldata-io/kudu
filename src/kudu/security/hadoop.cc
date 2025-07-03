@@ -1,8 +1,9 @@
 #include <cassert>
-#include <filesystem>
+#include <cstring>
 #include <vector>
 #include <optional>
 #include <locale>
+#include <climits>
 #include "hadoop.h"
 #include <shared_mutex>
 #include <string>
@@ -39,26 +40,27 @@ int HadoopAuthToLocal::setKrb5Context(krb5_context& ctx){
 int HadoopAuthToLocal::setConf(const std::string& filepath) {
   std::unique_lock<std::shared_mutex> lock(mutex_);
 
-  std::filesystem::path real_path;
-  try {
-    real_path = std::filesystem::canonical(filepath);
-  } catch (const std::filesystem::filesystem_error& e) {
-    LOG(ERROR) << "Failed to resolve file path: " << filepath << ". Error: " << e.what() << "\n";
+  char buffer[PATH_MAX];
+  std::string canonical_path; 
+  if(realpath(filepath.c_str(), buffer)){
+    canonical_path = std::string(buffer);
+  }
+  else {
+    LOG(ERROR) << "Failed to resolve real path for " << filepath << ": " << strerror(errno) << "\n";
+  }
+
+  const std::string ext = ".xml";
+  if (canonical_path.length() < ext.length() ||
+    canonical_path.compare(canonical_path.length() - ext.length(), ext.length(), ext) != 0) {
+    LOG(ERROR) << "HadoopAuthToLocal configuration file must be an XML file, but got: " << canonical_path << "\n";
     return -1;
   }
-  if(!std::filesystem::is_regular_file(real_path)){
-    LOG(ERROR) << "File does not exist or is not a regular file: " << real_path << "\n";
-    return -1;
-  }
-  if(real_path.extension() != ".xml") {
-    LOG(ERROR) << "Invalid file type: " << real_path << ". Expected .xml file.\n";
-    return -1;
-  }
+
   boost::property_tree::ptree tree;
   try {
-      boost::property_tree::read_xml(filepath, tree);
+      boost::property_tree::read_xml(canonical_path, tree);
   } catch (const boost::property_tree::xml_parser_error& e) {
-     LOG(ERROR) << "Malformed XML when loading " << filepath << "\n";
+     LOG(ERROR) << "Malformed XML when loading " << filepath << " which resolves to " << canonical_path << " \n";
     return -1;
   }
   for (const auto &property : tree.get_child("configuration")){
