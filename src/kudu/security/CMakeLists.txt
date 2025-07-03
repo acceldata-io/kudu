@@ -136,9 +136,11 @@ endif()
 
 SET_KUDU_TEST_LINK_LIBS(
   mini_kdc
+  hadoop_tests
   security
   security_test_util)
 
+ADD_KUDU_TEST(hadoop_tests)
 ADD_KUDU_TEST(ca/cert_management-test)
 ADD_KUDU_TEST(cert-test)
 ADD_KUDU_TEST(crypto-test)
