@@ -116,6 +116,10 @@ TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest){
       .input = "RULE:[2:$1@\\]0](hue@EXAMPLE.COM)s/.*/hue/",
       .expected = {"2", "$1@]0", "hue@EXAMPLE.COM", "s/.*/hue/"}
     },
+    {
+      .input = R"(RULE:[1:$1](App\..*)s/App\.(.*)/$1/g)",
+      .expected = {"1", "$1", "App\\..*", "s/App\\.(.*)/$1/g"},
+    },
 
   };
   std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>>  parsed_rule;
@@ -213,7 +217,9 @@ TEST(HadoopAuthToLocalTest, badLoadRulesTest) {
     "<configuration></configuration>",
     "<configuration><property></property></configuration>",
     "<configuration><property><name>hadoop.security.auth_to_local</name></property></configuration>",
-    "<configuration><property><name>hadoop.security.auth_to_local</name><value></value></property></configuration>"
+    "<configuration><property><name>hadoop.security.auth_to_local</name><value></value></property></configuration>",
+    "<configuration><property><value></property></configuration>",
+    
   };
    for (const auto& rule : rules){
     std::istringstream rule_stream(rule);
@@ -287,6 +293,9 @@ TEST(HadoopAuthToLocalTest, formatTest){
 
   std::optional<std::string> failure = HadoopAuthToLocal::format("$1-$2$9@$0", {"host", "part1"});
   ASSERT_FALSE(failure.has_value()) << "Expected failure for invalid format string";
+  std::string fmt = "$x@$$9";
+  EXPECT_FALSE(HadoopAuthToLocal::format(fmt, {"EXAMPLE.COM", "user"}).has_value()) 
+    << "Expected failure for invalid format string: " << fmt;
 }
 
 TEST(HadoopAuthToLocalTest, getRealmTest) {
@@ -387,7 +396,14 @@ TEST(HadoopAuthToLocalTest, initRuleTest) {
       << "Expected hasSedRule: " << test.has_sed_rule 
       << " but got: " << rule->sedRule.has_value() << " for input: " << test.input;
   }
-
+}
+TEST(HadoopAuthToLocalTest, badInitRulesTest) {
+  struct TestCase {
+    std::string input;
+    std::string expected_fmt;
+    std::string expected_regexMatchString;
+    bool has_sed_rule;
+  };
   std::vector<std::string> bad_rules = {
     "",
     "   ",
@@ -404,6 +420,8 @@ TEST(HadoopAuthToLocalTest, initRuleTest) {
     "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/EXTRA",
     "RULE:[2:$1@$0]",
     "RULE:[2:$1@$0](hive@EXAMPLE.COM)garbage",
+    "RULE:2:$1](hive@EXAMPLE.COM)s/.*/hive/",
+    "RULE:2:$1(hive@EXAMPLE.COM)s/.*/hive/",
     "DEFAULT extra",
   };
 
@@ -411,10 +429,6 @@ TEST(HadoopAuthToLocalTest, initRuleTest) {
     std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(bad_rule);
     ASSERT_FALSE(rule.has_value()) << "Expected failure for invalid rule: " << bad_rule;
   }
-}
-
-TEST(HadoopAuthToLocalTest, matchPrincipalAgainstRulesTest){
-
 }
 
 TEST(HadoopAuthToLocalTest, transformPrincipalTest){
@@ -463,7 +477,17 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
       .input = "DEFAULT",
       .principal = "spark-user@EXAMPLE.COM",
       .expected = "spark-user",
-    }
+    },
+    {
+      .input = R"(RULE:[1:$1](App\..*)s/App\.(.*)/$1/g)",
+      .principal = "App.kudu@EXAMPLE.COM",
+      .expected = "kudu",
+    },
+    {
+      .input = R"(RULE:[2:$1](App\..*)s/App\.(.*)/$1/g)",
+      .principal = "App.kudu/myhost@EXAMPLE.COM",
+      .expected = "kudu",
+    },
   };
   HadoopAuthToLocal auth_to_local = HadoopAuthToLocal();
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
@@ -478,42 +502,54 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
       << "Expected: " << test.expected << " but got: " << formatted_principal.value() 
       << " for input: " << test.input;
   }
+}
+TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
+  struct TestCase {
+    std::string input;
+    std::string principal;
+    std::string expected;
+  };
+
   std::vector<TestCase> negative_test_cases = {
     {
-        .input = "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
-        .principal = "impala/my_host@EXAMPLE.COM",
+      .input = "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
+      .principal = "impala/my_host@EXAMPLE.COM",
     },
     {
-        .input = "RULE:[1:$1@$0]([aeiou]+@.*EXAMPLE.COM)s/[aeE]/c/g",
-        .principal = "bcee@EXAMPLE.COM",
+      .input = "RULE:[1:$1@$0]([aeiou]+@.*EXAMPLE.COM)s/[aeE]/c/g",
+      .principal = "bcee@EXAMPLE.COM",
     },
     {
-        .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
-        .principal = "xx/my_other_host@EXAMPLE.COM",
+      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .principal = "xx/my_other_host@EXAMPLE.COM",
     },
     {
-        .input = "RULE:[1:$1@$0](spark-rangerkerberos@EXAMPLE.COM)s/.*/spark/",
-        .principal = "spark@EXAMPLE.COM",
+      .input = "RULE:[1:$1@$0](spark-rangerkerberos@EXAMPLE.COM)s/.*/spark/",
+      .principal = "spark@EXAMPLE.COM",
     },
     {
-        .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
-        .principal = "hm@EXAMPLE.COM",
+      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .principal = "hm@EXAMPLE.COM",
     },
     {
-        .input = R"(RULE:[2:$1@$0](.*@\QBD.COMPANY.PRI\E$)s/@\QBD.COMPANY.PRI\E$//)",
-        .principal = "mzeoli/somehost@OTHERREALM.COM",
+      .input = R"(RULE:[2:$1@$0](.*@\QBD.COMPANY.PRI\E$)s/@\QBD.COMPANY.PRI\E$//)",
+      .principal = "mzeoli/somehost@OTHERREALM.COM",
     },
     {
-        .input = "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
-        .principal = "hive@EXAMPLE.COM",
+      .input = "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
+      .principal = "hive@EXAMPLE.COM",
     },
     {
-        .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
-        .principal = "hm/my_other_host@EXAMPLE.ORG",
+      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .principal = "hm/my_other_host@EXAMPLE.ORG",
     },
     {
-        .input = "RULE:[1:$1@$0](spark@EXAMPLE.COM)s/.*/spark/",
-        .principal = "sparkly@EXAMPLE.COM",
+      .input = "RULE:[1:$1@$0](spark@EXAMPLE.COM)s/.*/spark/",
+      .principal = "sparkly@EXAMPLE.COM",
+    },
+    {
+      .input = "RULE:[1:$1@$0](spark@EXAMPLE.COMs/.*/spark/",
+      .principal = "spark@ExAmPle.COM",
     },
     {
       .input = "DEFAULT",
@@ -524,6 +560,9 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
       .principal = " ",
     }
   };
+  HadoopAuthToLocal auth_to_local = HadoopAuthToLocal();
+  auth_to_local.setDefaultRealm("EXAMPLE.COM");
+
   for (const auto& test : negative_test_cases) {
     std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: " << test.input;
@@ -548,6 +587,7 @@ RULE:[1:$1@$0](ambari-qa-rangerkerberos@EXAMPLE.COM)s/.*/ambari-qa/
 RULE:[1:$1@$0](hbase-rangerkerberos@EXAMPLE.COM)s/.*/hbase/
 RULE:[1:$1@$0](hdfs-rangerkerberos@EXAMPLE.COM)s/.*/hdfs/
 RULE:[1:$1@$0](spark-rangerkerberos@EXAMPLE.COM)s/.*/spark/
+RULE:[1:$1@$0](spark-rangerkerberos@EXAMPLE.COM)s/.*/SECONDSPARK/
 RULE:[1:$1@$0](yarn-ats-rangerkerberos@EXAMPLE.COM)s/.*/yarn-ats/
 RULE:[1:$1@$0](.*@EXAMPLE.COM)s/@.*//
 RULE:[2:$1@$0](dn@EXAMPLE.COM)s/.*/hdfs/
@@ -576,6 +616,7 @@ RULE:[1:$1@$0](.*@\QBD.COMPANY.PRI\E$)s/@\QBD.COMPANY.PRI\E$//
 RULE:[2:$1@$0](.*@\QBD.COMPANY.PRI\E$)s/@\QBD.COMPANY.PRI\E$//
 RULE:[1:$1@$0](.*@\QCOMPANY.PRI\E$)s/@\QCOMPANY.PRI\E$//
 RULE:[2:$1@$0](.*@\QCOMPANY.PRI\E$)s/@\QCOMPANY.PRI\E$//
+RULE:[2:$1@$0](.*@\QCOMPANY$PRI\N$)s/@\QCOMPANY$PRI\E$//
 DEFAULT
 </value>
 </property>
@@ -638,6 +679,10 @@ DEFAULT
         .principal = "dave/host123@COMPANY.PRI",
         .expected = "dave"
     },
+    {
+      .principal = "eve/host@COMPANY$PRI",
+      .expected = "eve",
+    },
   };
 
   std::istringstream rule_stream_two(rules[1]);
@@ -676,7 +721,7 @@ DEFAULT
   std::atomic<bool> start{false};
   std::atomic<int> success_count{0};
   int num_readers = 8;
-  int num_writers = 1;
+  int num_writers = 2;
   int iterations = 1000;
 
   
@@ -695,7 +740,12 @@ DEFAULT
       for (int i = 0; i < iterations; ++i) {
         std::istringstream rewrite(rule_xml);
         auth_to_local->setRules(rewrite);
-        auth_to_local->setDefaultRealm("EXAMPLE.COM");
+        if(auth_to_local->defaultRealm_ == "EXAMPLE.COM"){
+          auth_to_local->setDefaultRealm("MY.OTHER.REALM");
+        }
+        else {
+          auth_to_local->setDefaultRealm("EXAMPLE.COM");
+        }
       }
   };
 

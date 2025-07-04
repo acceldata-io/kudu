@@ -30,6 +30,7 @@ class HadoopAuthToLocal {
 
   static constexpr std::size_t kParseFields = 4;
   static constexpr std::size_t kAtPosDefault = -2;
+
   struct SedRule {
     std::string pattern;
     std::string replacement;
@@ -52,58 +53,62 @@ class HadoopAuthToLocal {
   using Token = HadoopAuthToLocal::Token;
 
   std::vector<std::string> coreSiteRules_;
-  std::vector<Rule> rules_;
   std::string defaultRealm_ = "";
+  std::vector<Rule> rules_;
+
   mutable std::shared_mutex mutex_;
 
   void setDefaultRealm(const std::string& realm);
 
+  static bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault);
+  static int numberOfFields(const std::string& principal);
   static std::optional<Rule> initRule(const std::string& auth_rule);
   static std::optional<SedRule> parseSedRule(const std::string& sed_rule);
-  static int numberOfFields(const std::string& principal);
-  static std::optional<std::string> replaceMatchingPrincipal(const Rule& rule, const std::string& formatted_principal);
   static std::optional<std::array<std::string, kParseFields>> parseAuthToLocalRule(const std::string &auth_rule);
-  static bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault);
+  static std::optional<std::string> format(const std::string& fmt, const std::vector<std::string>& values);
+  static std::optional<std::string> replaceMatchingPrincipal(const Rule& rule, const std::string& formatted_principal);
+  static std::optional<std::vector<Token>> tokenize(const std::string& fmt);
+  static std::string SedBackslashEscape(const std::string& input);
+  static std::string escapeJavaRegexLiteral(const std::string& input);
   static std::string getRealm(const std::string& principal, size_t at_pos = kAtPosDefault);
   static std::string processJavaRegexLiterals(const std::string& input);
-  static std::string escapeJavaRegexLiteral(const std::string& input);
-  static std::optional<std::string> format(const std::string& fmt, const std::vector<std::string>& values);
-  static std::optional<std::vector<Token>> tokenize(const std::string& fmt);
   static std::vector<std::string> extractFields(const std::string& principal);
-  static std::string SedBackslashEscape(const std::string& input);
+  
+  bool matchNumberOfFields(const Rule &rule, const std::string&principal);
 
   int setRules(std::istream& input);
   int fieldsMatch(const Rule &rule, const std::string& principal);
-  bool matchNumberOfFields(const Rule &rule, const std::string&principal);
-  std::optional<std::string> transformPrincipal(const Rule& rule, const std::string& principal);
+
   std::optional<std::string> createFormattedPrincipal(const Rule& rule, const std::vector<std::string>& principal_fields );
   std::optional<std::string> defaultRule(const Rule& rule, const std::string& principal, const std::string& realm);
+  std::optional<std::string> transformPrincipal(const Rule& rule, const std::string& principal);
 
-  FRIEND_TEST(HadoopAuthToLocalTest, sedRuleTest);
-  FRIEND_TEST(HadoopAuthToLocalTest, badSedRuleTest);
 
-  FRIEND_TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest);
-  FRIEND_TEST(HadoopAuthToLocalTest, badParseAuthToLocalRuleTest);
 
-  FRIEND_TEST(HadoopAuthToLocalTest, loadRulesTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, badInitRulesTest);
   FRIEND_TEST(HadoopAuthToLocalTest, badLoadRulesTest);
-
+  FRIEND_TEST(HadoopAuthToLocalTest, badParseAuthToLocalRuleTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, badSedRuleTest);
   FRIEND_TEST(HadoopAuthToLocalTest, checkPrincipalTest);
   FRIEND_TEST(HadoopAuthToLocalTest, formatTest);
   FRIEND_TEST(HadoopAuthToLocalTest, getRealmTest);
-  FRIEND_TEST(HadoopAuthToLocalTest, numberOfFieldsTest);
   FRIEND_TEST(HadoopAuthToLocalTest, initRuleTest);
-  FRIEND_TEST(HadoopAuthToLocalTest, transformPrincipalTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, loadRulesTest);
   FRIEND_TEST(HadoopAuthToLocalTest, matchPrincipalAgainstAllRulesTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, numberOfFieldsTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, sedRuleTest);
   FRIEND_TEST(HadoopAuthToLocalTest, threadSafeTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, transformPrincipalTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest);
 
   public:
     HadoopAuthToLocal(); //Used for tests
     HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx);
+    std::vector<std::string> getRules();
     int loadConf(const std::string& filepath);
     int setKrb5Context(krb5_context& ctx);
     std::optional<std::string> matchPrincipalAgainstRules(const std::string& principal);
-    const std::vector<std::string>& getRules();
 };
 } // namespace security
 } // namespace kudu

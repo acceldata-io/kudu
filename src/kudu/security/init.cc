@@ -107,6 +107,8 @@ namespace {
 // Global context for usage of the Krb5 library.
 krb5_context g_krb5_ctx;
 
+// Global instance of the HadoopAuthToLocal class, to map principals
+std::unique_ptr<HadoopAuthToLocal> g_hadoop_auth_to_local;
 // This lock is used to avoid a race while reacquiring the kerberos ticket.
 // The race can occur between the time we reinitialize the cache and the
 // time when we actually store the new credentials back in the cache.
@@ -140,7 +142,10 @@ void InitKrb5Ctx() {
       char* unused_realm;
       CHECK_EQ(krb5_get_default_realm(g_krb5_ctx, &unused_realm), 0);
       krb5_free_default_realm(g_krb5_ctx, unused_realm);
-
+      
+      g_hadoop_auth_to_local = std::make_unique<HadoopAuthToLocal>(
+          FLAGS_core_site_path, g_krb5_ctx);
+      
       g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
     });
 }
@@ -424,18 +429,23 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
     rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
   }
 
-  if(!FLAGS_core_site_path.empty()){
-    std::optional<std::string> hadoop_short_name = HadoopAuthToLocal(FLAGS_core_site_path, g_krb5_ctx).matchPrincipalAgainstRules(principal);
+  if(FLAGS_core_site_path.length() > 0 ) {
+    // If the Hadoop auth-to-local mapping is enabled, we use that instead of the krb5 library.
+    // This allows us to use the Hadoop configuration to map principals to local usernames.
+    if (!g_hadoop_auth_to_local) {
+      return Status::InvalidArgument("Hadoop auth-to-local mapping not initialized");
+    }
+    std::optional<std::string> hadoop_short_name =
+        g_hadoop_auth_to_local->matchPrincipalAgainstRules(principal);
     if(hadoop_short_name.has_value()) {
       if (hadoop_short_name.value().empty()) {
         return Status::InvalidArgument("Principal mapped to empty username");
       }
       local_name->assign(hadoop_short_name.value());
       return Status::OK();
-    } 
-    return Status::InvalidArgument("Principal not mapped");
+    }
   }
-  
+
   if (rc == KRB5_LNAME_NOTRANS || rc == KRB5_PLUGIN_NO_HANDLE) {
     // No name mapping specified, or krb5-based name mapping is disabled.
     //

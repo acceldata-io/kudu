@@ -1,38 +1,47 @@
 #include <algorithm>
-#include <cstring>
-#include <unordered_set>
-#include <vector>
-#include <optional>
-#include <locale>
-#include <climits>
-#include "hadoop.h"
-#include <shared_mutex>
-#include <string>
-#include <regex>
-#include <glog/logging.h>
-
-#include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/strings/strip.h"
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <boost/foreach.hpp>
+#include <cstring>
+#include <climits> //Used for PATH_MAX
+#include <glog/logging.h>
+#include <locale>
+#include <optional>
+#include <regex>
+#include <shared_mutex>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+#include "hadoop.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strip.h"
 
 namespace kudu {
 namespace security {
+
 HadoopAuthToLocal::HadoopAuthToLocal(const std::string& filepath, krb5_context& ctx) {
   setKrb5Context(ctx);
   loadConf(filepath);
 }
+
 //used for tests
 HadoopAuthToLocal::HadoopAuthToLocal(){
   defaultRealm_ = "";
   coreSiteRules_ = std::vector<std::string>{};
 }
+
+//Private function used only for tests
 void HadoopAuthToLocal::setDefaultRealm(const std::string& realm) {
   std::unique_lock<std::shared_mutex> lock(mutex_);
   defaultRealm_ = realm;
   StripWhiteSpace(&defaultRealm_);
 }
+
+std::vector<std::string> HadoopAuthToLocal::getRules() {
+  return this->coreSiteRules_;
+}
+
 int HadoopAuthToLocal::setKrb5Context(krb5_context& ctx){
   std::unique_lock<std::shared_mutex> lock(mutex_);
   char *realm = nullptr;
@@ -46,7 +55,6 @@ int HadoopAuthToLocal::setKrb5Context(krb5_context& ctx){
   StripWhiteSpace(&defaultRealm_);
   krb5_free_default_realm(ctx, realm);
   return 0;
-
 }
 
 int HadoopAuthToLocal::loadConf(const std::string& filepath) {
@@ -105,6 +113,7 @@ int HadoopAuthToLocal::setRules(std::istream& input) {
       StripWhiteSpace(&rule);
       std::optional<Rule> new_rule = initRule(rule);
       if (new_rule.has_value()) {
+        this->coreSiteRules_.push_back(rule);
         this->rules_.push_back(new_rule.value());
       } else {
         LOG(ERROR) << "Invalid rule: " << rule << "\n";
@@ -232,6 +241,7 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
     return std::nullopt;
   }
   const char delimiter = sed_rule[1];
+  //Absolute max size of any part of a sed rule
   constexpr size_t max_size = 128;
 
   std::string rule = sed_rule.substr(2); //skip the s + delimiter
@@ -241,7 +251,7 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
   bool escape = false;
   std::regex match_regex;
     
-  if (std::isalnum(delimiter, loc) || delimiter == '\\' || delimiter == ' ' || delimiter == '@') {
+  if (std::isalnum(delimiter, loc) || std::isspace(delimiter, loc) ||  delimiter == '\\' || delimiter == '@') {
     LOG(ERROR) << "Invalid delimiter in sed rule: '" << delimiter << "'\n";
     return std::nullopt;
   }
@@ -317,7 +327,6 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
         return std::nullopt;
       }
   }
-
 
   return SedRule{.pattern = part[0], .replacement = part[1], .flags = flags, .compiled_pattern = match_regex};
 }
@@ -464,7 +473,6 @@ std::optional<HadoopAuthToLocal::Rule> HadoopAuthToLocal::initRule(const std::st
       return std::nullopt;
     }
     
-    
     return rule;
   }
   LOG(ERROR) << "Failed to parse rule: " << auth_rule << "\n";
@@ -524,6 +532,8 @@ std::optional<std::string> HadoopAuthToLocal::replaceMatchingPrincipal(const Rul
     return std::nullopt;
   }
 
+  //Hadoop auth_to_local rules only support the 'g' and 'L' flags.
+  //The 'L' flag is a Hadoop specific extension to lowercase the output.
   if (auto sed = rule.sedRule){
     if(!sed->flags.empty()){
       if(sed->flags.find('g') != std::string::npos){
@@ -553,6 +563,7 @@ bool HadoopAuthToLocal::checkPrincipal(std::string_view principal, size_t at_pos
     LOG(ERROR) << "Principal cannot be empty\n";
     return false;
   }
+
   if (at_pos == kAtPosDefault ){
     at_pos = principal.find('@');
   }
@@ -565,6 +576,7 @@ bool HadoopAuthToLocal::checkPrincipal(std::string_view principal, size_t at_pos
   }
 
   size_t at_count = std::count(principal.begin(), principal.end(), '@');
+  
   if(at_count != 1){
     return false;
   }
@@ -611,7 +623,6 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(const Rule& rul
     return std::nullopt;
   }
   std::string realm = getRealm(principal);
-  //Check how this works in krb5
   if (rule.fmt == "DEFAULT" && realm == this->defaultRealm_) {
     std::vector<std::string> fields = extractFields(principal);
     if(fields.size() > 1){
@@ -635,6 +646,12 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(const Rule& rul
 
 std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(const std::string &principal){
   std::shared_lock<std::shared_mutex> lock(mutex_);
+
+  if(rules_.empty()) {
+    LOG(ERROR) << "No auth_to_local rules loaded from Hadoop configuration\n";
+    return std::nullopt;
+  }
+
   for (const auto &rule : rules_) {
     
     std::optional<std::string> new_principal = transformPrincipal(rule, principal);
