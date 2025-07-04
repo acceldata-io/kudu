@@ -85,7 +85,11 @@ DEFINE_string(keytab_file, "",
               "to be used to authenticate RPC connections.");
 TAG_FLAG(keytab_file, stable);
 
-DEFINE_string(core_site_path, "" ,"PATH to a core-site xml file.");
+DEFINE_string(core_site_path, "" ,
+              "PATH to a core-site xml file. This allows "
+              "loading auth-to-local rules from Hadoop's configuration, instead "
+              "of relying on the system krb5.conf");
+TAG_FLAG(core_site_path, advanced);
 
 using std::mt19937;
 using std::nullopt;
@@ -143,8 +147,12 @@ void InitKrb5Ctx() {
       CHECK_EQ(krb5_get_default_realm(g_krb5_ctx, &unused_realm), 0);
       krb5_free_default_realm(g_krb5_ctx, unused_realm);
       
-      g_hadoop_auth_to_local = std::make_unique<HadoopAuthToLocal>(
+      if(FLAGS_core_site_path.length() > 0) {
+        // If the Hadoop auth-to-local mapping is enabled, we use that instead of the krb5 library.
+        // This allows us to use the Hadoop configuration to map principals to local usernames.
+        g_hadoop_auth_to_local = std::make_unique<HadoopAuthToLocal>(
           FLAGS_core_site_path, g_krb5_ctx);
+      }
       
       g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
     });

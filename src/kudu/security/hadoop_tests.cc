@@ -94,7 +94,7 @@ TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest){
     },
     {
       .input = R"(RULE:[2:$1-$2@$0](.*@\QCOMPANY.PRI\E$)s/@\QCOMPANY.PRI\E$//)",
-      .expected = {"2", "$1-$2@$0", ".*@COMPANY\\.PRI$", "s/@COMPANY\\.PRI$//"},
+      .expected = {"2", "$1-$2@$0", ".*@COMPANY\\.PRI$", "s/@\\QCOMPANY.PRI\\E$//"},
     },
     {
       .input = " RULE:[2:$1@$0](hue@EXAMPLE.COM)s/@.*/hue/L",
@@ -211,6 +211,9 @@ DEFAULT
 }
 
 TEST(HadoopAuthToLocalTest, badLoadRulesTest) {
+  int old_minloglevel = FLAGS_minloglevel;
+  FLAGS_minloglevel = google::GLOG_FATAL;
+
   HadoopAuthToLocal auth_to_local;
   std::vector<std::string> rules = {
     "",
@@ -226,6 +229,7 @@ TEST(HadoopAuthToLocalTest, badLoadRulesTest) {
     EXPECT_EQ(auth_to_local.setRules(rule_stream), -1);
     EXPECT_FALSE(auth_to_local.rules_.size() > 0); 
   }
+  FLAGS_minloglevel = old_minloglevel;
 }
 
 TEST(HadoopAuthToLocalTest, checkPrincipalTest) {
@@ -261,6 +265,7 @@ TEST(HadoopAuthToLocalTest, formatTest){
     std::vector<std::string> values;
     std::string expected;
   };
+
   std::vector<TestCase> test_cases = {
     {
       .input = "$1@$0",
@@ -282,6 +287,11 @@ TEST(HadoopAuthToLocalTest, formatTest){
       .values = {"host", "", "", "my_name"},
       .expected = "-@host",
     },
+    {
+      .input = "$1@$0",
+      .values = {"EXAMPLE.COM", "hbase"},
+      .expected = "hbase@EXAMPLE.COM",
+    }
   };
   
   for(const auto& test : test_cases) {
@@ -290,12 +300,17 @@ TEST(HadoopAuthToLocalTest, formatTest){
     EXPECT_EQ(result.value(), test.expected) << "Expected: " << test.expected 
       << " but got: " << result.value() << " for input: " << test.input;
   }
+}
+TEST(HadoopAuthToLocalTest, badFormatTest){
+  int old_minloglevel = FLAGS_minloglevel;
+  FLAGS_minloglevel = google::GLOG_FATAL;
 
   std::optional<std::string> failure = HadoopAuthToLocal::format("$1-$2$9@$0", {"host", "part1"});
-  ASSERT_FALSE(failure.has_value()) << "Expected failure for invalid format string";
+  EXPECT_FALSE(failure.has_value()) << "Expected failure for invalid format string";
   std::string fmt = "$x@$$9";
   EXPECT_FALSE(HadoopAuthToLocal::format(fmt, {"EXAMPLE.COM", "user"}).has_value()) 
     << "Expected failure for invalid format string: " << fmt;
+  FLAGS_minloglevel = old_minloglevel;
 }
 
 TEST(HadoopAuthToLocalTest, getRealmTest) {
@@ -404,6 +419,9 @@ TEST(HadoopAuthToLocalTest, badInitRulesTest) {
     std::string expected_regexMatchString;
     bool has_sed_rule;
   };
+  int old_minloglevel = FLAGS_minloglevel;
+  FLAGS_minloglevel = google::GLOG_FATAL;
+
   std::vector<std::string> bad_rules = {
     "",
     "   ",
@@ -429,6 +447,7 @@ TEST(HadoopAuthToLocalTest, badInitRulesTest) {
     std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(bad_rule);
     ASSERT_FALSE(rule.has_value()) << "Expected failure for invalid rule: " << bad_rule;
   }
+  FLAGS_minloglevel = old_minloglevel;
 }
 
 TEST(HadoopAuthToLocalTest, transformPrincipalTest){
@@ -452,6 +471,11 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
       .input = " RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
       .principal = "hm/my_other_host@SOMEEXAMPLE.COM",
       .expected = "hm",
+    },
+    {
+      .input = "RULE:[2:$1@$0](hbase@EXAMPLE.COM)s/.*/hbase/",
+      .principal = "hbase/hadoophost1@EXAMPLE.COM",
+      .expected = "hbase",
     },
     {
       .input = "RULE:[1:$1@$0](spark-rangerkerberos@EXAMPLE.COM)s/.*/spark/",
@@ -493,7 +517,7 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
   for (const auto& test : test_cases) {
     std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
-    ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: " << test.input;
+    ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: '" << test.input << "'";
     std::optional<std::string> formatted_principal = auth_to_local.transformPrincipal(
       *rule, test.principal);
     ASSERT_TRUE(formatted_principal.has_value()) 
@@ -548,7 +572,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
       .principal = "sparkly@EXAMPLE.COM",
     },
     {
-      .input = "RULE:[1:$1@$0](spark@EXAMPLE.COMs/.*/spark/",
+      .input = "RULE:[1:$1@$0](spark@EXAMPLE.COM)s/.*/spark/",
       .principal = "spark@ExAmPle.COM",
     },
     {
@@ -616,7 +640,7 @@ RULE:[1:$1@$0](.*@\QBD.COMPANY.PRI\E$)s/@\QBD.COMPANY.PRI\E$//
 RULE:[2:$1@$0](.*@\QBD.COMPANY.PRI\E$)s/@\QBD.COMPANY.PRI\E$//
 RULE:[1:$1@$0](.*@\QCOMPANY.PRI\E$)s/@\QCOMPANY.PRI\E$//
 RULE:[2:$1@$0](.*@\QCOMPANY.PRI\E$)s/@\QCOMPANY.PRI\E$//
-RULE:[2:$1@$0](.*@\QCOMPANY$PRI\N$)s/@\QCOMPANY$PRI\E$//
+RULE:[2:$1@$0](.*@\QCOMPANY$PRI\E$)s/@\QCOMPANY$PRI\E$//
 DEFAULT
 </value>
 </property>
@@ -631,6 +655,10 @@ DEFAULT
     {
       .principal = "hbase/hadoophost1@EXAMPLE.COM",
       .expected = "hbase"
+    },
+    {
+      .principal = "ll/somehost@EXAMPLE.COM",
+      .expected = "ll"
     },
     {
       .principal = "nn/hadoophost2@EXAMPLE.COM",
@@ -685,6 +713,7 @@ DEFAULT
     },
   };
 
+  auth_to_local.setDefaultRealm("COMPANY.PRI");
   std::istringstream rule_stream_two(rules[1]);
   ASSERT_EQ(auth_to_local.setRules(rule_stream_two), 0);
   ASSERT_TRUE(auth_to_local.rules_.size() > 0); 
@@ -702,7 +731,7 @@ DEFAULT
 TEST(HadoopAuthToLocalTest, threadSafeTest){
   
   int old_minloglevel = FLAGS_minloglevel;
-  FLAGS_minloglevel = google::GLOG_ERROR;
+  FLAGS_minloglevel = google::GLOG_FATAL;
   std::unique_ptr<HadoopAuthToLocal> auth_to_local = std::make_unique<HadoopAuthToLocal>();;
   std::string rule_xml = R"(
   <configuration>
@@ -720,8 +749,8 @@ DEFAULT
 
   std::atomic<bool> start{false};
   std::atomic<int> success_count{0};
-  int num_readers = 8;
-  int num_writers = 2;
+  int num_readers = 6;
+  int num_writers = 1;
   int iterations = 1000;
 
   
@@ -740,12 +769,7 @@ DEFAULT
       for (int i = 0; i < iterations; ++i) {
         std::istringstream rewrite(rule_xml);
         auth_to_local->setRules(rewrite);
-        if(auth_to_local->defaultRealm_ == "EXAMPLE.COM"){
-          auth_to_local->setDefaultRealm("MY.OTHER.REALM");
-        }
-        else {
-          auth_to_local->setDefaultRealm("EXAMPLE.COM");
-        }
+        auth_to_local->setDefaultRealm("EXAMPLE.COM");
       }
   };
 

@@ -84,7 +84,7 @@ class HadoopAuthToLocal {
   std::optional<std::string> transformPrincipal(const Rule& rule, const std::string& principal);
 
 
-
+  FRIEND_TEST(HadoopAuthToLocalTest, badFormatTest);
   FRIEND_TEST(HadoopAuthToLocalTest, badInitRulesTest);
   FRIEND_TEST(HadoopAuthToLocalTest, badLoadRulesTest);
   FRIEND_TEST(HadoopAuthToLocalTest, badParseAuthToLocalRuleTest);
