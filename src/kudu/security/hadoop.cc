@@ -22,6 +22,7 @@
 #include <cstring>
 #include <climits> //Used for PATH_MAX
 #include <glog/logging.h>
+#include <krb5/krb5.h>
 #include <locale>
 #include <optional>
 #include <regex>
