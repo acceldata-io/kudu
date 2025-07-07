@@ -120,7 +120,14 @@ TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest){
       .input = R"(RULE:[1:$1](App\..*)s/App\.(.*)/$1/g)",
       .expected = {"1", "$1", "App\\..*", "s/App\\.(.*)/$1/g"},
     },
-
+    {
+      .input = R"(RULE:[2:$1@$0]())",
+      .expected = {"2", "$1@$0", "", ""},
+    },
+    {
+      .input = R"(RULE:[2:$1@$0])",
+      .expected = {"2", "$1@$0", "", ""},
+    },
   };
   std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>>  parsed_rule;
   for(const auto &test : test_cases) {
@@ -147,7 +154,7 @@ TEST(HadoopAuthToLocalTest, badParseAuthToLocalRuleTest) {
     "",
     "  ",
     "RULE: DEFAULT",
-    "RULE:[2:$1@$0]()",
+    "RULE:[2:$1@$0]()/",
     "rule:[2:$1@$0(abc)",
     "RULE:[](hue@EXAMPLE.COM)/s/[ue]/b/g",
 
@@ -397,7 +404,19 @@ TEST(HadoopAuthToLocalTest, initRuleTest) {
       .expected_fmt = "$1@$0",
       .expected_regexMatchString = ".*@BD\\.COMPANY\\.PRI$",
       .has_sed_rule = true,
-    }
+    },
+    {
+      .input = R"(RULE:[1:$1]s/@.*//g)",
+      .expected_fmt = "$1",
+      .expected_regexMatchString = "",
+      .has_sed_rule = true,
+    },
+ {
+      .input = R"(RULE:[1:$1]()s/@.*//g)",
+      .expected_fmt = "$1",
+      .expected_regexMatchString = "",
+      .has_sed_rule = true,
+    },
   };
   for (const auto& test : test_cases) {
     std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
@@ -428,7 +447,7 @@ TEST(HadoopAuthToLocalTest, badInitRulesTest) {
     "RULE:[2:$1@$0](",
     "RULE:[2:$1@$0](abc",
     "RULE:[2:$1@$0]abc)",
-    "RULE:[2:$1@$0]()s/.*/hive/",
+    "RULE:[2:$1@$0]()s/.*/hive/\\",
     "RULE:[2:](hive@EXAMPLE.COM)s/.*/hive/",
     "RULE:[2:$1@$0(hive@EXAMPLE.COM)s/.*/hive/",
     "RULE:[2:$1@$0](hive@EXAMPLE.COMs/.*/hive/",
@@ -436,7 +455,6 @@ TEST(HadoopAuthToLocalTest, badInitRulesTest) {
     "RULE:[2$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
     "rule:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
     "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/EXTRA",
-    "RULE:[2:$1@$0]",
     "RULE:[2:$1@$0](hive@EXAMPLE.COM)garbage",
     "RULE:2:$1](hive@EXAMPLE.COM)s/.*/hive/",
     "RULE:2:$1(hive@EXAMPLE.COM)s/.*/hive/",
@@ -515,6 +533,7 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
   };
   HadoopAuthToLocal auth_to_local = HadoopAuthToLocal();
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
+  auth_to_local.ruleMechanism_ = HadoopAuthToLocal::RuleMechanism::MIT;
   for (const auto& test : test_cases) {
     std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: '" << test.input << "'";
@@ -585,6 +604,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
     }
   };
   HadoopAuthToLocal auth_to_local = HadoopAuthToLocal();
+  auth_to_local.ruleMechanism_ = HadoopAuthToLocal::RuleMechanism::MIT;
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
 
   for (const auto& test : negative_test_cases) {
@@ -629,6 +649,10 @@ RULE:[2:$1@$0](yarn@EXAMPLE.COM)s/.*/yarn/
 RULE:[2:$1@$0](yarn-ats-hbase@EXAMPLE.COM)s/.*/yarn-ats/
 DEFAULT
 </value>
+</property>
+<property>
+  <name>hadoop.security.auth_to_local.mechanism</name>
+  <value>MIT</value>
 </property>
 </configuration>)",
 
@@ -681,6 +705,7 @@ DEFAULT
   std::istringstream rule_stream(rules[0]);
   ASSERT_EQ(auth_to_local.setRules(rule_stream), 0);
   ASSERT_TRUE(auth_to_local.rules_.size() > 0); 
+  EXPECT_EQ(auth_to_local.ruleMechanism_, HadoopAuthToLocal::RuleMechanism::MIT);
 
   for (const auto& test : test_cases) {
     std::optional<std::string> result = auth_to_local.matchPrincipalAgainstRules(test.principal);
@@ -785,6 +810,65 @@ DEFAULT
 
   EXPECT_EQ(success_count.load(), num_readers * iterations);
   FLAGS_minloglevel = old_minloglevel;
+}
+
+TEST(HadoopAuthToLocalTest, ruleMechanismTest) {
+  struct TestCase {
+    std::string input;
+    bool valid;
+  };
+
+  HadoopAuthToLocal auth_to_local;
+  auth_to_local.setDefaultRealm("EXAMPLE.COM");
+
+  std::istringstream rule_stream("RULE:[1:$1]\nDEFAULT");
+  auth_to_local.setRules(rule_stream);
+  auth_to_local.ruleMechanism_ = HadoopAuthToLocal::RuleMechanism::HADOOP;
+  std::vector<TestCase> hadoop_cases = {
+    {
+      .input = "hdfs",
+      .valid = true,
+    },
+    {
+      .input = "hdfs-someservice",
+      .valid = true,
+    },
+    {
+      .input = "hdfs/host",
+      .valid = false,
+    },
+    {
+      .input = "hdfs@hostname",
+      .valid = false,
+    },
+  };
+
+  std::vector<TestCase> mit_cases = {
+    {
+      .input = "hdfs",
+      .valid = true,
+    },
+    {
+      .input = "hdfs/host",
+      .valid = true,
+    },
+    {
+      .input = "hdfs@hostname",
+      .valid = true,
+    }
+  };
+
+  for (const auto& test : hadoop_cases) {
+    EXPECT_EQ(auth_to_local.simplePatternCheck(test.input), test.valid) 
+      << "Hadoop rule validation failed for: " << test.input;
+  }
+
+  auth_to_local.ruleMechanism_ = HadoopAuthToLocal::RuleMechanism::MIT;
+
+  for (const auto& test : mit_cases) {
+    EXPECT_EQ(auth_to_local.simplePatternCheck(test.input), test.valid) 
+      << "MIT rule validation failed for: " << test.input;
+  }
 }
 
 } // namespace security

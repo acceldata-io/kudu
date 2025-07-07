@@ -119,7 +119,14 @@ int HadoopAuthToLocal::setRules(std::istream& input) {
   for (const auto &property : tree.get_child("configuration")){
     if(property.first == "property") {
       std::string name = property.second.get<std::string>("name", "");
-      if (name == "hadoop.security.auth_to_local") {
+      if (name == "hadoop.security.auth_to_local.mechanism"){
+        if(property.second.get<std::string>("value", "") == "MIT"){
+          ruleMechanism_ = RuleMechanism::MIT;
+        } else {
+          ruleMechanism_ = RuleMechanism::HADOOP;
+        }
+      }
+      else if (name == "hadoop.security.auth_to_local") {
         std::string value = property.second.get<std::string>("value", "");
         
         std::string::size_type pos = 0;
@@ -132,6 +139,7 @@ int HadoopAuthToLocal::setRules(std::istream& input) {
       }
     }
   }
+
   for (auto &rule : rules){
     StripWhiteSpace(&rule);
     if(!rule.empty()){
@@ -251,21 +259,6 @@ std::string HadoopAuthToLocal::processJavaRegexLiterals(const std::string& input
   return output;
 }
 
-std::string HadoopAuthToLocal::SedBackslashEscape(const std::string& input){
-  std::string regex_pattern;
-  regex_pattern.reserve(input.size() * 2);
-
-  for (size_t idx = 0; idx < input.size(); ++idx) {
-    if (input[idx] == '\\') {
-      regex_pattern += "\\\\";
-    }
-    else{
-      regex_pattern += input[idx];
-    }
-  }
-  return regex_pattern;
-}
-
 std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const std::string& sed_rule){
   std::locale loc("");
   if (sed_rule.empty()) {  
@@ -370,124 +363,167 @@ std::optional<HadoopAuthToLocal::SedRule> HadoopAuthToLocal::parseSedRule(const 
 
 std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> HadoopAuthToLocal::parseAuthToLocalRule(const std::string& rule){
   std::locale loc("");
+
+  enum class State {NUMBER, FORMAT, MATCH, SED, DONE};
+
+  constexpr size_t match_field = 2;
+  constexpr size_t sed_field = 3;
+
   if(rule.empty()) {
     LOG(WARNING) << "Empty rule provided for HadoopAuthToLocal::parseAuthToLocalRule\n";
     return std::nullopt;
   }
   const std::string prefix = "RULE:[";
   size_t pos = prefix.length();
-  std::string number="";
-  std::string format="";
-  std::string regex_match="";
-  std::string sed_rule="";
+
+  std::array<std::string, HadoopAuthToLocal::kParseFields> string_parts;
+
+  size_t string_parts_idx = 0;
+
   std::string auth_rule = rule;
+  State state = State::NUMBER;
+  
   StripWhiteSpace(&auth_rule);
 
 
   if(auth_rule == "DEFAULT"){
     return std::array<std::string, HadoopAuthToLocal::kParseFields> {"0", "DEFAULT", "", ""};
   }
+
   if(auth_rule.rfind(prefix, 0) != 0 ){
     LOG(ERROR) << "Invalid rule format: " << auth_rule << "\n";
     LOG(ERROR) << "Expected: " << prefix << " at beginning of rule\n";
     return std::nullopt;
   }
-  
 
-  while(pos < auth_rule.length() && isdigit(auth_rule[pos], loc)){
-    number += auth_rule[pos];
-    ++pos;
-  }
-  if (pos >= auth_rule.length() || auth_rule[pos] != ':') {
-    LOG(ERROR) << "Expected ':' at char " << pos << ", got " << auth_rule[pos] << "instead\n";
-    return std::nullopt;
+  for(auto str : string_parts) {
+    str.reserve(auth_rule.length());
   }
   
-
   bool escape = false;
-  while (++pos < auth_rule.length() ) {
+  int paren_count = 0;
+  
+  while(pos < auth_rule.length() && state != State::DONE){
     char current_char = auth_rule[pos];
-    if (escape) {
-      format += current_char;
-      escape = false;
-    } else if (current_char == '\\') {
-      escape = true;
-    } else if (current_char == ']') {
-      break;
-    } else {
-      format += current_char;
+    
+    switch(state){
+      case State::NUMBER: {
+        if(std::isdigit(current_char, loc)){
+          string_parts[string_parts_idx] += current_char;
+        } else if (current_char == ':') {
+          if(string_parts[string_parts_idx].empty()){
+            LOG(ERROR) << "Expected a number before ':' in rule: " << auth_rule << "\n";
+            return std::nullopt;
+          }
+          state = State::FORMAT;
+          string_parts_idx += 1;
+          escape = false;
+          
+        } else {
+          LOG(ERROR) << "Expected a digit or ':' at char " << pos + 1 << ", got '" << current_char << "' instead\n";
+          return std::nullopt;
+        }
+        break;
+      }
+      case State::FORMAT: {
+        if(current_char == ']' && !escape){
+          if (string_parts[string_parts_idx].empty()) {
+            LOG(ERROR) << "Expected a format string before ']' in rule: " << auth_rule << "\n";
+            return std::nullopt;
+          }
+          state = State::MATCH;
+          string_parts_idx += 1;
+          escape = false;
+        } else if (current_char == '\\' && !escape){
+          escape = true;
+        } else {
+          escape = false;
+          string_parts[string_parts_idx] += current_char;
+        }
+        break;
+      }
+      //This is an optional field
+      case State::MATCH: {
+        if (paren_count < 0){
+          LOG(ERROR) << "Unmatched parentheses in rule: " << auth_rule << "\n";
+          return std::nullopt;
+        } 
+
+        if (paren_count == 0 && current_char != '('){
+          state = State::SED;
+          string_parts_idx += 1;
+          continue;
+        }
+        if (paren_count == 0 && current_char == '(' && !escape){
+          paren_count +=1;
+        } else if (current_char == ')' && paren_count == 1 && !escape){
+          state = State::SED;
+          string_parts_idx += 1;
+          --paren_count;
+        } else if (escape){
+          string_parts[string_parts_idx] += current_char;
+          escape = false;
+        } else if (current_char == '\\'){
+          escape = true;
+          string_parts[string_parts_idx] += current_char;
+        } else {
+          if (current_char == '(') {
+            ++paren_count;
+          } else if (current_char == ')') {
+            --paren_count;
+          }
+          string_parts[string_parts_idx] += current_char;
+        }
+        break;
+      }
+      //This is an optional field
+      case State::SED: {
+        size_t sed_end = string_parts[string_parts_idx].find_last_not_of(" \t\f\v\n\r");
+        if(sed_end != std::string::npos){
+          string_parts[sed_field] = "";
+        } else {
+          string_parts[sed_field] = auth_rule.substr(pos, sed_end - pos); 
+        }
+        if(string_parts[sed_field].length() > 0 && string_parts[sed_field][0] != 's'){
+          LOG(ERROR) << "Unexpected character at " << pos + 1 << " '" << string_parts[sed_field][0] << "' in rule: " << auth_rule << "\n";
+          return std::nullopt;
+        }
+        state = State::DONE;
+
+        break;
+      }
+      default: {
+        LOG(ERROR) << "Unexpected state while parsing auth_to_local rule " << auth_rule ;
+      }
     }
+    ++pos;
+    
+  }
+  if(state == State::SED && string_parts[sed_field].empty()) {
+    state = State::DONE;
   }
 
-  if(auth_rule[pos] != ']'){
-    LOG(ERROR) << "Expected ']' at char " << pos + 1 << ", got '" << auth_rule[pos] << "' instead \n";
+  if(state == State::MATCH && string_parts[match_field].empty()){
+    state = State::DONE;
+  }
+
+  if(escape){
+    LOG(ERROR) << "Trailing backslash in rule: " << auth_rule << "\n";
     return std::nullopt;
   }
 
-  if(pos>= auth_rule.length() || auth_rule[pos + 1] != '('){
-
-    LOG(ERROR) << "Expected '(' at char " << pos + 1 << " in "<< auth_rule << "\n";
-    LOG(ERROR) << "Got " << auth_rule[pos] << " instead\n";
+  if (paren_count != 0) {
+    LOG(ERROR) << "Unmatched parentheses in rule: " << auth_rule << "\n";
     return std::nullopt;
   }
-  //Move past the '('
-  ++pos;
-  int parens_count = 1;
 
-  escape = false;
-  while (++pos < auth_rule.length()) {
-    char current_char = auth_rule[pos];
-    if (escape){
-      regex_match += current_char;
-      escape = false;
-    }
-    else if (current_char == '\\'){
-      regex_match += current_char;
-      escape = true;
-    } else if (current_char == '(') {
-      regex_match += current_char;
-      ++parens_count;
-    } else if (current_char == ')'){
-      --parens_count;
-      if(parens_count == 0){
-        break; //we found the closing parenthesis
-      }
-      if (parens_count < 0) {
-        LOG(ERROR) << "Unexpected closing parenthesis at char " << pos << " in rule: " << auth_rule << "\n";
-        return std::nullopt;
-      }
-      regex_match += current_char; 
-      
-    } else {
-      regex_match += current_char;
-    }
+  if (state != State::DONE){
+    LOG(ERROR) << "Unexpected end of rule while parsing auth_to_local rule: " << auth_rule << "\n";
+    return std::nullopt;
   }
   
-  if(parens_count != 0 ){
-    LOG(ERROR) << "Unmatched opening parenthesis in rule: " << auth_rule << "\n" ;
-    return std::nullopt;
-  }
-
-  if(auth_rule[pos ] != ')'){
-    LOG(ERROR) << "Expected ')' at char " << pos + 1 << ", got '" << auth_rule[pos] << "' instead \n";
-    return std::nullopt;
-  }
-  if(regex_match.empty()){
-    LOG(ERROR) << "Regex match string cannot be empty in rule: " << auth_rule << "\n";
-    return std::nullopt;
-  }
-  regex_match = processJavaRegexLiterals(regex_match);
-  //Move past the ')'
-  if (++pos < auth_rule.length()){
-    sed_rule = auth_rule.substr(pos);
-  }
-
-  StripWhiteSpace(&number);
-  StripWhiteSpace(&format);
-  StripWhiteSpace(&regex_match);
-  StripWhiteSpace(&sed_rule);
-
-  return std::array<std::string, HadoopAuthToLocal::kParseFields>{ number, format, regex_match, sed_rule };
+  string_parts[match_field] = processJavaRegexLiterals(string_parts[match_field]);
+  return string_parts;
 }
 
 std::optional<HadoopAuthToLocal::Rule> HadoopAuthToLocal::initRule(const std::string &auth_rule){
@@ -501,7 +537,7 @@ std::optional<HadoopAuthToLocal::Rule> HadoopAuthToLocal::initRule(const std::st
 
   if(auth_to_local.has_value()){
     auto [num_fields, format, regex_match_str, sed_rule] = auth_to_local.value();
-    if (format != "DEFAULT" && (num_fields.empty() || format.empty() || regex_match_str.empty())) {
+    if (format != "DEFAULT" && (num_fields.empty() || format.empty())) {
       LOG(ERROR) << "Invalid rule format: " << auth_rule << "\n";
       return std::nullopt;
     }
@@ -514,6 +550,7 @@ std::optional<HadoopAuthToLocal::Rule> HadoopAuthToLocal::initRule(const std::st
         .sedRule = parseSedRule(sed_rule),
         
       };
+
     if(!sed_rule.empty() && !rule.sedRule.has_value()) {
       LOG(ERROR) << "Failed to parse sed rule in: " << auth_rule << "\n";
       return std::nullopt;
@@ -581,7 +618,7 @@ std::optional<std::string> HadoopAuthToLocal::replaceMatchingPrincipal(const Rul
   std::regex_constants::match_flag_type regex_replace_flags = std::regex_constants::format_first_only;
   bool lowercase_output = false;
 
-  if(!std::regex_match(formatted_principal, rule.regexMatch)){
+  if(!std::regex_match(formatted_principal, rule.regexMatch) && rule.regexMatchString.length() > 0) {
     return std::nullopt;
   }
 
@@ -648,6 +685,17 @@ bool HadoopAuthToLocal::checkPrincipal(std::string_view principal, size_t at_pos
   return true;
 }
 
+bool HadoopAuthToLocal::simplePatternCheck(std::string_view short_name){
+  if(this->ruleMechanism_ == RuleMechanism::HADOOP) { 
+    if (short_name.find('@') != std::string::npos || short_name.find('/') != std::string::npos) {
+      LOG(WARNING) << "Short name cannot contain both '@' and '/' characters: " << short_name << "\n";
+      return false;
+    }
+  }
+
+  return true;
+}
+
 std::optional<std::string> HadoopAuthToLocal::defaultRule(const Rule& rule, const std::string& principal, const std::string& realm){
   if (rule.fmt == "DEFAULT" && realm == this->defaultRealm_) {
     std::vector<std::string> fields = extractFields(principal);
@@ -682,7 +730,9 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(const Rule& rul
     }
     LOG(ERROR) << "Principal does not have enough fields for DEFAULT rule: " << principal << "\n";
     return std::nullopt;
-  } else if (rule.fmt == "DEFAULT" && realm != this->defaultRealm_) {
+  } 
+
+  if (rule.fmt == "DEFAULT" && realm != this->defaultRealm_) {
     return std::nullopt;
   }
 
@@ -694,7 +744,12 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(const Rule& rul
   if (!formattedShortRule.has_value()) {
     return std::nullopt;
   }
-  return replaceMatchingPrincipal(rule, formattedShortRule.value()) ;
+  std::optional<std::string> output = replaceMatchingPrincipal(rule, formattedShortRule.value());
+  
+  if (output.has_value() && simplePatternCheck(output.value())) {
+    return output;
+  }
+  return std::nullopt;
 
 }
 

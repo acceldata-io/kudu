@@ -31,6 +31,8 @@ class HadoopAuthToLocal {
   static constexpr std::size_t kParseFields = 4;
   static constexpr std::size_t kAtPosDefault = -2;
 
+  enum class RuleMechanism {HADOOP, MIT};
+
   struct SedRule {
     std::string pattern;
     std::string replacement;
@@ -55,6 +57,7 @@ class HadoopAuthToLocal {
   std::vector<std::string> coreSiteRules_;
   std::string defaultRealm_ = "";
   std::vector<Rule> rules_;
+  RuleMechanism ruleMechanism_ = RuleMechanism::HADOOP;
 
   mutable std::shared_mutex mutex_;
 
@@ -68,13 +71,13 @@ class HadoopAuthToLocal {
   static std::optional<std::string> format(const std::string& fmt, const std::vector<std::string>& values);
   static std::optional<std::string> replaceMatchingPrincipal(const Rule& rule, const std::string& formatted_principal);
   static std::optional<std::vector<Token>> tokenize(const std::string& fmt);
-  static std::string SedBackslashEscape(const std::string& input);
   static std::string escapeJavaRegexLiteral(const std::string& input);
   static std::string getRealm(const std::string& principal, size_t at_pos = kAtPosDefault);
   static std::string processJavaRegexLiterals(const std::string& input);
   static std::vector<std::string> extractFields(const std::string& principal);
   
   bool matchNumberOfFields(const Rule &rule, const std::string&principal);
+  bool simplePatternCheck(std::string_view short_name);
 
   int setRules(std::istream& input);
   int fieldsMatch(const Rule &rule, const std::string& principal);
@@ -97,6 +100,7 @@ class HadoopAuthToLocal {
   FRIEND_TEST(HadoopAuthToLocalTest, matchPrincipalAgainstAllRulesTest);
   FRIEND_TEST(HadoopAuthToLocalTest, numberOfFieldsTest);
   FRIEND_TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, ruleMechanismTest);
   FRIEND_TEST(HadoopAuthToLocalTest, sedRuleTest);
   FRIEND_TEST(HadoopAuthToLocalTest, threadSafeTest);
   FRIEND_TEST(HadoopAuthToLocalTest, transformPrincipalTest);
