@@ -64,7 +64,7 @@ class HadoopAuthToLocal {
   void setDefaultRealm(const std::string& realm);
 
   static bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault);
-  static int numberOfFields(const std::string& principal);
+  static int numberOfFields(std::string_view principal);
   static std::optional<Rule> initRule(const std::string& auth_rule);
   static std::optional<SedRule> parseSedRule(const std::string& sed_rule);
   static std::optional<std::array<std::string, kParseFields>> parseAuthToLocalRule(const std::string &auth_rule);
@@ -76,14 +76,14 @@ class HadoopAuthToLocal {
   static std::string processJavaRegexLiterals(const std::string& input);
   static std::vector<std::string> extractFields(const std::string& principal);
   
-  bool matchNumberOfFields(const Rule &rule, const std::string&principal);
+  bool matchNumberOfFields(const Rule &rule, const std::string& principal);
   bool simplePatternCheck(std::string_view short_name);
 
   int setRules(std::istream& input);
-  int fieldsMatch(const Rule &rule, const std::string& principal);
+  int fieldsMatch(const Rule &rule, std::string_view principal);
 
   std::optional<std::string> createFormattedPrincipal(const Rule& rule, const std::vector<std::string>& principal_fields );
-  std::optional<std::string> defaultRule(const Rule& rule, const std::string& principal, const std::string& realm);
+  std::optional<std::string> defaultRule(const Rule& rule, const std::string& principal, std::string_view realm);
   std::optional<std::string> transformPrincipal(const Rule& rule, const std::string& principal);
 
 

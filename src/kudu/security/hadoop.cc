@@ -569,12 +569,12 @@ std::optional<HadoopAuthToLocal::Rule> HadoopAuthToLocal::initRule(const std::st
   return std::nullopt;
 }
 
-int HadoopAuthToLocal::numberOfFields(const std::string& principal){
+int HadoopAuthToLocal::numberOfFields(std::string_view principal){
   size_t at_pos = principal.find('@');
   if (!checkPrincipal(principal, at_pos)){
     return -1;
   }
-  std::string principal_without_realm = principal.substr(0, at_pos);
+  std::string_view principal_without_realm = principal.substr(0, at_pos);
   std::string::difference_type slash_count = std::count(principal_without_realm.begin(), principal_without_realm.end(), '/');
   int count = static_cast<int>(slash_count);
   // Count is the number of slashes, but we want the actual number of fields separated by the slashes, so one extra.
@@ -696,7 +696,7 @@ bool HadoopAuthToLocal::simplePatternCheck(std::string_view short_name){
   return true;
 }
 
-std::optional<std::string> HadoopAuthToLocal::defaultRule(const Rule& rule, const std::string& principal, const std::string& realm){
+std::optional<std::string> HadoopAuthToLocal::defaultRule(const Rule& rule, const std::string& principal, std::string_view realm){
   if (rule.fmt == "DEFAULT" && realm == this->defaultRealm_) {
     std::vector<std::string> fields = extractFields(principal);
     if(fields.size() > 1){
