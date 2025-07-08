@@ -112,7 +112,7 @@ namespace {
 krb5_context g_krb5_ctx;
 
 // Global instance of the HadoopAuthToLocal class, to map principals
-std::unique_ptr<HadoopAuthToLocal> g_hadoop_auth_to_local;
+std::unique_ptr<HadoopAuthToLocal> g_hadoop_auth_to_local = nullptr;
 // This lock is used to avoid a race while reacquiring the kerberos ticket.
 // The race can occur between the time we reinitialize the cache and the
 // time when we actually store the new credentials back in the cache.
@@ -150,7 +150,7 @@ void InitKrb5Ctx() {
       if(FLAGS_core_site_path.length() > 0) {
         // If the Hadoop auth-to-local mapping is enabled, we use that instead of the krb5 library.
         // This allows us to use the Hadoop configuration to map principals to local usernames.
-        g_hadoop_auth_to_local = std::make_unique<HadoopAuthToLocal>(
+        g_hadoop_auth_to_local = HadoopAuthToLocal::init(
           FLAGS_core_site_path, g_krb5_ctx);
       }
       
@@ -431,6 +431,10 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
   SCOPED_CLEANUP({
       krb5_free_principal(g_krb5_ctx, princ);
     });
+
+
+
+
   char buf[1024];
   krb5_error_code rc = KRB5_LNAME_NOTRANS;
   if (FLAGS_use_system_auth_to_local) {

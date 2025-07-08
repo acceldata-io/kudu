@@ -212,7 +212,7 @@ DEFAULT
 
   for (const auto& rule : rules){
     std::istringstream rule_stream(rule);
-    EXPECT_EQ(auth_to_local.setRules(rule_stream), 0);
+    EXPECT_EQ(auth_to_local.setRules(rule_stream), true);
     EXPECT_TRUE(auth_to_local.rules_.size() > 0); 
   }
 }
@@ -220,20 +220,24 @@ DEFAULT
 TEST(HadoopAuthToLocalTest, badLoadRulesTest) {
   int old_minloglevel = FLAGS_minloglevel;
   FLAGS_minloglevel = google::GLOG_FATAL;
+  std::string long_string = "<configuration><property><name>hadoop.security.auth_to_local</name>" 
+    "<value></value></property></configuration>";
+
+
 
   HadoopAuthToLocal auth_to_local;
   std::vector<std::string> rules = {
-    "",
-    "<configuration></configuration>",
-    "<configuration><property></property></configuration>",
-    "<configuration><property><name>hadoop.security.auth_to_local</name></property></configuration>",
-    "<configuration><property><name>hadoop.security.auth_to_local</name><value></value></property></configuration>",
-    "<configuration><property><value></property></configuration>",
+  "",
+  "<configuration></configuration>",
+  "<configuration><property></property></configuration>",
+  "<configuration><property><name>hadoop.security.auth_to_local</name></property></configuration>",
+  long_string,
+  "<configuration><property><value></property></configuration>",
     
   };
    for (const auto& rule : rules){
     std::istringstream rule_stream(rule);
-    EXPECT_EQ(auth_to_local.setRules(rule_stream), -1);
+    EXPECT_EQ(auth_to_local.setRules(rule_stream), false);
     EXPECT_FALSE(auth_to_local.rules_.size() > 0); 
   }
   FLAGS_minloglevel = old_minloglevel;
@@ -703,7 +707,7 @@ DEFAULT
   };
 
   std::istringstream rule_stream(rules[0]);
-  ASSERT_EQ(auth_to_local.setRules(rule_stream), 0);
+  ASSERT_TRUE(auth_to_local.setRules(rule_stream));
   ASSERT_TRUE(auth_to_local.rules_.size() > 0); 
   EXPECT_EQ(auth_to_local.ruleMechanism_, HadoopAuthToLocal::RuleMechanism::MIT);
 
@@ -740,7 +744,7 @@ DEFAULT
 
   auth_to_local.setDefaultRealm("COMPANY.PRI");
   std::istringstream rule_stream_two(rules[1]);
-  ASSERT_EQ(auth_to_local.setRules(rule_stream_two), 0);
+  ASSERT_TRUE(auth_to_local.setRules(rule_stream_two));
   ASSERT_TRUE(auth_to_local.rules_.size() > 0); 
 
 
@@ -757,7 +761,7 @@ TEST(HadoopAuthToLocalTest, threadSafeTest){
   
   int old_minloglevel = FLAGS_minloglevel;
   FLAGS_minloglevel = google::GLOG_FATAL;
-  std::unique_ptr<HadoopAuthToLocal> auth_to_local = std::make_unique<HadoopAuthToLocal>();;
+  std::unique_ptr<HadoopAuthToLocal> auth_to_local(new HadoopAuthToLocal);
   std::string rule_xml = R"(
   <configuration>
     <property>
@@ -770,7 +774,7 @@ DEFAULT
   </configuration>
   )";
   std::istringstream rule_stream(rule_xml);
-  ASSERT_EQ(auth_to_local->setRules(rule_stream), 0);
+  ASSERT_EQ(auth_to_local->setRules(rule_stream), true);
 
   std::atomic<bool> start{false};
   std::atomic<int> success_count{0};
@@ -821,8 +825,10 @@ TEST(HadoopAuthToLocalTest, ruleMechanismTest) {
   HadoopAuthToLocal auth_to_local;
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
 
-  std::istringstream rule_stream("RULE:[1:$1]\nDEFAULT");
-  auth_to_local.setRules(rule_stream);
+  std::istringstream rule_stream(
+    "<configuration><property><name>hadoop.security.auth_to_local"
+    "</name><value>RULE:[1:$1]\nDEFAULT</value></property></configuration>");
+  ASSERT_TRUE(auth_to_local.setRules(rule_stream));
   auth_to_local.ruleMechanism_ = HadoopAuthToLocal::RuleMechanism::HADOOP;
   std::vector<TestCase> hadoop_cases = {
     {
