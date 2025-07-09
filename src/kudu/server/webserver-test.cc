@@ -111,6 +111,9 @@ class WebserverTest : public KuduTest {
     if (use_ssl()) {
       SetSslOptions(&opts);
       cert_path_ = opts.certificate_file;
+      if (use_tls1_3()) {
+        opts.tls_min_protocol = "TLSv1.3";
+      }
     }
     if (use_htpasswd()) SetHTPasswdOptions(&opts);
     MaybeSetupSpnego(&opts);
@@ -148,6 +151,7 @@ class WebserverTest : public KuduTest {
   virtual bool enable_doc_root() const { return true; }
   virtual bool use_ssl() const { return false; }
   virtual bool use_htpasswd() const { return false; }
+  virtual bool use_tls1_3() const { return false; }
 
   EasyCurl curl_;
   faststring buf_;
@@ -161,6 +165,11 @@ class WebserverTest : public KuduTest {
 class SslWebserverTest : public WebserverTest {
  protected:
   bool use_ssl() const override { return true; }
+};
+
+class Tls13WebserverTest : public SslWebserverTest {
+ protected:
+  bool use_tls1_3() const override { return true; }
 };
 
 class PasswdWebserverTest : public WebserverTest {
@@ -433,6 +442,60 @@ TEST_F(SslWebserverTest, TestSSL) {
   ASSERT_OK(curl_.FetchURL(url_, &buf_));
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+}
+
+TEST_F(Tls13WebserverTest, TestTlsMinVersion) {
+  FLAGS_trusted_certificate_file = cert_path_;
+  curl_.set_tls_max_version(TlsVersion::TLSv1_2);
+
+  Status s = curl_.FetchURL(url_, &buf_);
+  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "TLS connect error");
+
+  curl_.set_tls_min_version(TlsVersion::TLSv1_3);
+  curl_.set_tls_max_version(TlsVersion::ANY);
+
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+}
+
+TEST_F(SslWebserverTest, StrictTransportSecurtyPolicyHeaders) {
+  constexpr const char* const kHstsHeader = "Strict-Transport-Security";
+  // Since the server uses a self-signed TLS certificate, disable the cert
+  // validation in curl.
+  curl_.set_verify_peer(false);
+  curl_.set_return_headers(true);
+
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  // Basic sanity check: the page should have the expected title.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+
+  // The HSTS policy is disabled by default for the embedded Kudu webserver.
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), kHstsHeader);
+
+  // There should be the HTTP strict transport security policy (HSTS) header
+  // in the response sent from the HTTPS (i.e. TLS-protected) endpoint.
+  for (auto max_age : {0, 1, 1000, 31536000}) {
+    FLAGS_webserver_hsts_max_age_seconds = max_age;
+    ASSERT_OK(curl_.FetchURL(url_, &buf_));
+    ASSERT_STR_CONTAINS(buf_.ToString(), Substitute(
+        "$0: max-age=$1", kHstsHeader, max_age));
+    ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "includeSubDomains");
+  }
+
+  // Setting the flag to a negative value should result in no HSTS headers.
+  for (auto max_age : {-31536000, -100, -1 }) {
+    FLAGS_webserver_hsts_max_age_seconds = max_age;
+    ASSERT_OK(curl_.FetchURL(url_, &buf_));
+    ASSERT_STR_NOT_CONTAINS(buf_.ToString(), kHstsHeader);
+  }
+
+  constexpr auto kMaxAge = 888;
+  FLAGS_webserver_hsts_max_age_seconds = kMaxAge;
+  FLAGS_webserver_hsts_include_sub_domains = true;
+  ASSERT_OK(curl_.FetchURL(url_, &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), Substitute(
+      "$0: max-age=$1; includeSubDomains", kHstsHeader, kMaxAge));
 }
 
 TEST_F(WebserverTest, TestDefaultPaths) {
