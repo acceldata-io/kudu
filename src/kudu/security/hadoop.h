@@ -66,9 +66,10 @@ class HadoopAuthToLocal {
   static bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault);
   static int numberOfFields(std::string_view principal);
   static std::optional<Rule> initRule(const std::string& auth_rule);
-  static std::optional<SedRule> parseSedRule(std::string_view sed_rule);
+  static std::optional<bool> match_regex(const std::regex& reg, const std::regex& sed_reg, std::string_view match_string, int milliseconds = 100);
+  static std::optional<SedRule> parseSedRule(std::string_view sed_rule) noexcept;
   static std::optional<std::array<std::string, kParseFields>> parseAuthToLocalRule(
-    const std::string &rule);
+    std::string_view rule);
 
   static std::optional<std::string> format(
     const std::string& fmt, 
@@ -119,6 +120,7 @@ class HadoopAuthToLocal {
   FRIEND_TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest);
   FRIEND_TEST(HadoopAuthToLocalTest, ruleMechanismTest);
   FRIEND_TEST(HadoopAuthToLocalTest, sedRuleTest);
+  FRIEND_TEST(HadoopAuthToLocalTest, testRegexMatch);
   FRIEND_TEST(HadoopAuthToLocalTest, threadSafeTest);
   FRIEND_TEST(HadoopAuthToLocalTest, transformPrincipalTest);
   FRIEND_TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest);

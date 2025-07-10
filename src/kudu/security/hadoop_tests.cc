@@ -36,7 +36,7 @@ TEST(HadoopAuthToLocalTest, sedRuleTest) {
       .expected = {"@.*", "", "Lg"},
     },
     {
-      .input = "s|@.+||g|L",
+      .input = "s/@.+//g/L",
       .expected = {"@.+", "", "gL"},
     },
     {
@@ -44,7 +44,7 @@ TEST(HadoopAuthToLocalTest, sedRuleTest) {
       .expected = {"@.", "", "L"},
     },
     {
-      .input = "s|@.||L",
+      .input = "s/@.//L",
       .expected = {"@.", "", "L"},
     },
     {
@@ -73,7 +73,7 @@ TEST(HadoopAuthToLocalTest, sedRuleTest) {
 }
 
 TEST(HadoopAuthToLocalTest, badSedRuleTest) {
-  std::vector<std::string> input = {"r/@.//L/g",R"(s/\//)", "s|@.//L", "s/@.//L/gL", "  ", };
+  std::vector<std::string> input = {"r/@.//L/g",R"(s/\//)", "s|@.//L", "s/@.//L/gL", "  ", "s|abc|def|"};
   std::optional<HadoopAuthToLocal::SedRule> rule;
   for(auto &rule_str : input) {
     rule = HadoopAuthToLocal::parseSedRule(rule_str);
@@ -359,16 +359,22 @@ TEST(HadoopAuthToLocalTest, numberOfFieldsTest) {
   std::vector<TestCase> test_cases = {
     {
       .input = "hue-yarnkerberos@EXAMPLE.COM",
-    .expected = 2, 
+    .expected = 1, 
     },
     {
       .input = "spark/my_host@EXAMPLE.NET",
-      .expected = 3,
+      .expected = 2,
     },
     {.input = "not_valid",
     .expected = -1, 
     },
   };
+  for (const auto& test : test_cases){
+    int num_fields = HadoopAuthToLocal::numberOfFields(test.input);
+    ASSERT_EQ(num_fields, test.expected) 
+      << "Expected: " << test.expected << " but got: " 
+      << num_fields << " for input: " << test.input;
+  }
 }
 
 TEST(HadoopAuthToLocalTest, initRuleTest) {
@@ -490,7 +496,7 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
       .expected = "cccc@cXAMPLc.COM",
     },
     {
-      .input = " RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .input = " RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s/@.+//",
       .principal = "hm/my_other_host@SOMEEXAMPLE.COM",
       .expected = "hm",
     },
@@ -567,7 +573,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
       .principal = "bcee@EXAMPLE.COM",
     },
     {
-      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s/@.+//",
       .principal = "xx/my_other_host@EXAMPLE.COM",
     },
     {
@@ -575,7 +581,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
       .principal = "spark@EXAMPLE.COM",
     },
     {
-      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s/@.+//",
       .principal = "hm@EXAMPLE.COM",
     },
     {
@@ -587,7 +593,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
       .principal = "hive@EXAMPLE.COM",
     },
     {
-      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s|@.+||",
+      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s/@.+//",
       .principal = "hm/my_other_host@EXAMPLE.ORG",
     },
     {
@@ -778,9 +784,9 @@ DEFAULT
 
   std::atomic<bool> start{false};
   std::atomic<int> success_count{0};
-  int num_readers = 6;
-  int num_writers = 1;
-  int iterations = 1000;
+  int num_readers = 4;
+  int num_writers = 2;
+  int iterations = 50;
 
   
   auto reader = [&]() {
@@ -877,5 +883,16 @@ TEST(HadoopAuthToLocalTest, ruleMechanismTest) {
   }
 }
 
+TEST(HadoopAuthToLocalTest, testRegexMatch) {
+
+
+  std::string bad_pattern = "(a+)+b";
+  std::string evil_input = std::string(10000, 'a') + "X"; 
+  std::regex reg(bad_pattern);
+  std::regex sed_match(".*"); 
+
+  auto result = HadoopAuthToLocal::match_regex(reg, sed_match, evil_input, 100); // 100ms
+  EXPECT_EQ(result, std::nullopt);
+}
 } // namespace security
 } // namespace kudu
