@@ -178,7 +178,7 @@ bool HadoopAuthToLocal::setRules(std::istream& input) {
       if (new_rule.has_value() ) {
         //This map is organized by the number of fields in the rule.
         //A principal can only match against a rule if it has the same number of fields
-        //Except for DFEAULT, which is handled as a special case
+        //Except for DEFAULT, which is handled as a special case
         this->rulesByFields_[new_rule->numberOfFields].push_back(new_rule.value());
       } else {
         LOG(WARNING) << "Invalid rule: " << rule ;
@@ -192,7 +192,7 @@ bool HadoopAuthToLocal::setRules(std::istream& input) {
 //Turn a format string like $1@$0 and replace all placeholders with values from the vector 'values'
 std::optional<std::string> HadoopAuthToLocal::format(const std::string& fmt, const std::vector<std::string>& values) const{
   //We deal with DEFAULT elsewhere
-  if (fmt == "DFEAULT"){
+  if (fmt == "DEFAULT"){
     return std::nullopt;
   }
   std::string result;
