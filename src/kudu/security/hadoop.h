@@ -60,7 +60,7 @@ class HadoopAuthToLocal {
   std::vector<std::string> coreSiteRules_;
   std::string defaultRealm_ ;
   //std::vector<Rule> rules_;
-  std::map<int, std::vector<Rule>> rulesByFields_;
+  std::unordered_map<int, std::vector<Rule>> rulesByFields_;
   RuleMechanism ruleMechanism_ = RuleMechanism::HADOOP;
 
   mutable std::shared_mutex mutex_;
