@@ -18,6 +18,8 @@
 #pragma once
 #include <gtest/gtest_prod.h>
 #include <krb5/krb5.h>
+#include <locale>
+#include <map>
 #include <optional>
 #include <regex>
 #include <shared_mutex>
@@ -54,44 +56,62 @@ class HadoopAuthToLocal {
   };
   using Token = HadoopAuthToLocal::Token;
 
+  const std::locale loc_ = std::locale("");
   std::vector<std::string> coreSiteRules_;
   std::string defaultRealm_ ;
-  std::vector<Rule> rules_;
+  //std::vector<Rule> rules_;
+  std::map<int, std::vector<Rule>> rulesByFields_;
   RuleMechanism ruleMechanism_ = RuleMechanism::HADOOP;
 
   mutable std::shared_mutex mutex_;
 
   void setDefaultRealm(const std::string& realm);
 
-  static bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault);
-  static int numberOfFields(std::string_view principal);
-  static std::optional<Rule> initRule(const std::string& auth_rule);
-  static std::optional<bool> match_regex(const std::regex& reg, const std::regex& sed_reg, std::string_view match_string, int milliseconds = 100);
+  bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault) const;
+  int numberOfFields(std::string_view principal) const;
+  std::optional<Rule> initRule(const std::string& auth_rule);
+  static std::optional<bool> try_match_regex(
+    const std::regex& reg, 
+    const std::optional<SedRule>& sed_match, 
+    std::string_view match_string, 
+    int milliseconds);
   static std::optional<SedRule> parseSedRule(std::string_view sed_rule) noexcept;
-  static std::optional<std::array<std::string, kParseFields>> parseAuthToLocalRule(
+  static std::optional<std::string> parseSedFlags(std::string_view flag, char delimiter) noexcept;
+  std::optional<std::array<std::string, kParseFields>> parseAuthToLocalRule(
     std::string_view rule);
 
-  static std::optional<std::string> format(
+  std::optional<std::string> parseNumberString(
+    std::string_view auth_rule, 
+    size_t& pos) const; 
+    
+  static std::optional<std::string> parseFormatString(
+    std::string_view auth_rule,
+    bool& escape,
+    size_t& pos);
+  static std::optional<std::string> parseMatchString(
+    std::string_view auth_rule, 
+    bool& escape,
+    size_t& pos);
+  static std::optional<std::string> parseSedString(std::string_view auth_rule, size_t& pos);
+   
+
+  std::optional<std::string> format(
     const std::string& fmt, 
-    const std::vector<std::string>& values);
+    const std::vector<std::string>& values) const;
 
   static std::optional<std::string> processJavaRegexLiterals(std::string_view input);
   static std::optional<std::string> replaceMatchingPrincipal(
     const Rule& rule, 
     const std::string& formatted_principal);
 
-  static std::optional<std::vector<Token>> tokenize(const std::string& fmt);
   static std::string escapeJavaRegexLiteral(std::string_view input);
-  static std::string getRealm(std::string_view principal, size_t at_pos = kAtPosDefault);
-  static std::vector<std::string> extractFields(std::string_view principal);
+  std::string getRealm(std::string_view principal, size_t at_pos = kAtPosDefault) const;
+  std::vector<std::string> extractFields(std::string_view principal) const;
   
   bool loadConf(const std::string& filepath);
-  bool matchNumberOfFields(const Rule &rule, std::string_view principal) const;
   bool setKrb5Context(krb5_context& ctx);
   bool setRules(std::istream& input);
   bool simplePatternCheck(std::string_view short_name) const;
-
-  int fieldsMatch(const Rule &rule, std::string_view principal);
 
   std::optional<std::string> createFormattedPrincipal(
     const Rule& rule, 
@@ -102,7 +122,10 @@ class HadoopAuthToLocal {
     const std::string& principal, 
     std::string_view realm) const;
 
-  std::optional<std::string> transformPrincipal(const Rule& rule, std::string_view principal) const;
+  std::optional<std::string> transformPrincipal(
+    const Rule& rule,
+    std::string_view principal, 
+    const std::vector<std::string>& fields) const;
 
 
   FRIEND_TEST(HadoopAuthToLocalTest, badFormatTest);

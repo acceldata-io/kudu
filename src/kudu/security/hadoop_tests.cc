@@ -129,9 +129,11 @@ TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest){
       .expected = {"2", "$1@$0", "", ""},
     },
   };
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>>  parsed_rule;
   for(const auto &test : test_cases) {
-    parsed_rule = HadoopAuthToLocal::parseAuthToLocalRule(test.input);
+    parsed_rule = auth.parseAuthToLocalRule(test.input);
     ASSERT_TRUE(parsed_rule.has_value()) << "Failed to parse: " << test.input;
     EXPECT_EQ(parsed_rule->size(), HadoopAuthToLocal::kParseFields);
     EXPECT_EQ(parsed_rule->at(0), test.expected[0]);
@@ -159,11 +161,13 @@ TEST(HadoopAuthToLocalTest, badParseAuthToLocalRuleTest) {
     "RULE:[](hue@EXAMPLE.COM)/s/[ue]/b/g",
 
   };
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> parsed_rule =
-    HadoopAuthToLocal::parseAuthToLocalRule("RULE:[2:$1@$0](");
+    auth.parseAuthToLocalRule("RULE:[2:$1@$0](");
 
   for( const auto& rule : rules) {
-    parsed_rule = HadoopAuthToLocal::parseAuthToLocalRule(rule);
+    parsed_rule = auth.parseAuthToLocalRule(rule);
     EXPECT_FALSE(parsed_rule.has_value());
   }
 }
@@ -213,7 +217,7 @@ DEFAULT
   for (const auto& rule : rules){
     std::istringstream rule_stream(rule);
     EXPECT_EQ(auth_to_local.setRules(rule_stream), true);
-    EXPECT_TRUE(auth_to_local.rules_.size() > 0); 
+    EXPECT_TRUE(auth_to_local.rulesByFields_.size() > 0); 
   }
 }
 
@@ -238,7 +242,7 @@ TEST(HadoopAuthToLocalTest, badLoadRulesTest) {
    for (const auto& rule : rules){
     std::istringstream rule_stream(rule);
     EXPECT_EQ(auth_to_local.setRules(rule_stream), false);
-    EXPECT_FALSE(auth_to_local.rules_.size() > 0); 
+    EXPECT_FALSE(auth_to_local.rulesByFields_.size() > 0); 
   }
   FLAGS_minloglevel = old_minloglevel;
 }
@@ -258,14 +262,15 @@ TEST(HadoopAuthToLocalTest, checkPrincipalTest) {
     "user@host@ANOTHER_HOST",
     "us er@HOST.COM",
   };
-
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   for(const auto& principal : valid_principals) {
-    EXPECT_TRUE(HadoopAuthToLocal::checkPrincipal(principal)) 
+    EXPECT_TRUE(auth.checkPrincipal(principal)) 
       << "Failed to validate principal: " << principal;
   }
 
   for(const auto& principal : invalid_principals) {
-    EXPECT_FALSE(HadoopAuthToLocal::checkPrincipal(principal)) 
+    EXPECT_FALSE(auth.checkPrincipal(principal)) 
       << "Failed to invalidate principal: " << principal;
   }
 }
@@ -304,9 +309,10 @@ TEST(HadoopAuthToLocalTest, formatTest){
       .expected = "hbase@EXAMPLE.COM",
     }
   };
-  
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   for(const auto& test : test_cases) {
-    std::optional<std::string> result = HadoopAuthToLocal::format(test.input, test.values);
+    std::optional<std::string> result = auth.format(test.input, test.values);
     ASSERT_TRUE(result.has_value()) << "Failed to format: " << test.input;
     EXPECT_EQ(result.value(), test.expected) << "Expected: " << test.expected 
       << " but got: " << result.value() << " for input: " << test.input;
@@ -315,11 +321,12 @@ TEST(HadoopAuthToLocalTest, formatTest){
 TEST(HadoopAuthToLocalTest, badFormatTest){
   int old_minloglevel = FLAGS_minloglevel;
   FLAGS_minloglevel = google::GLOG_FATAL;
-
-  std::optional<std::string> failure = HadoopAuthToLocal::format("$1-$2$9@$0", {"host", "part1"});
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
+  std::optional<std::string> failure = auth.format("$1-$2$9@$0", {"host", "part1"});
   EXPECT_FALSE(failure.has_value()) << "Expected failure for invalid format string";
   std::string fmt = "$x@$$9";
-  EXPECT_FALSE(HadoopAuthToLocal::format(fmt, {"EXAMPLE.COM", "user"}).has_value()) 
+  EXPECT_FALSE(auth.format(fmt, {"EXAMPLE.COM", "user"}).has_value()) 
     << "Expected failure for invalid format string: " << fmt;
   FLAGS_minloglevel = old_minloglevel;
 }
@@ -343,8 +350,10 @@ TEST(HadoopAuthToLocalTest, getRealmTest) {
       .expected = "",
     },
   };
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   for (const auto& test : test_cases) {
-    std::optional<std::string> realm = HadoopAuthToLocal::getRealm(test.input);
+    std::optional<std::string> realm = auth.getRealm(test.input);
     ASSERT_TRUE(realm.has_value()) << "Failed to get realm from: " << test.input;
     EXPECT_EQ(realm.value(), test.expected) << "Expected: " << test.expected 
       << " but got: " << realm.value() << " for input: " << test.input;
@@ -369,8 +378,10 @@ TEST(HadoopAuthToLocalTest, numberOfFieldsTest) {
     .expected = -1, 
     },
   };
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   for (const auto& test : test_cases){
-    int num_fields = HadoopAuthToLocal::numberOfFields(test.input);
+    int num_fields = auth.numberOfFields(test.input);
     ASSERT_EQ(num_fields, test.expected) 
       << "Expected: " << test.expected << " but got: " 
       << num_fields << " for input: " << test.input;
@@ -428,8 +439,10 @@ TEST(HadoopAuthToLocalTest, initRuleTest) {
       .has_sed_rule = true,
     },
   };
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   for (const auto& test : test_cases) {
-    std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
+    std::optional<HadoopAuthToLocal::Rule> rule = auth.initRule(test.input);
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: " << test.input;
     EXPECT_EQ(rule->fmt, test.expected_fmt) << "Expected format: " << test.expected_fmt 
       << " but got: " << rule->fmt << " for input: " << test.input;
@@ -470,9 +483,10 @@ TEST(HadoopAuthToLocalTest, badInitRulesTest) {
     "RULE:2:$1(hive@EXAMPLE.COM)s/.*/hive/",
     "DEFAULT extra",
   };
-
+  HadoopAuthToLocal auth = HadoopAuthToLocal();
+  auth.setDefaultRealm("EXAMPLE.COM");
   for (const auto& bad_rule : bad_rules) {
-    std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(bad_rule);
+    std::optional<HadoopAuthToLocal::Rule> rule = auth.initRule(bad_rule);
     ASSERT_FALSE(rule.has_value()) << "Expected failure for invalid rule: " << bad_rule;
   }
   FLAGS_minloglevel = old_minloglevel;
@@ -545,10 +559,13 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
   auth_to_local.ruleMechanism_ = HadoopAuthToLocal::RuleMechanism::MIT;
   for (const auto& test : test_cases) {
-    std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
+    std::optional<HadoopAuthToLocal::Rule> rule = auth_to_local.initRule(test.input);
+
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: '" << test.input << "'";
+    std::vector<std::string> fields = auth_to_local.extractFields(test.principal);
+
     std::optional<std::string> formatted_principal = auth_to_local.transformPrincipal(
-      *rule, test.principal);
+      *rule, test.principal, fields);
     ASSERT_TRUE(formatted_principal.has_value()) 
       << "Failed to create formatted principal for: " << test.principal;
     EXPECT_EQ(formatted_principal.value(), test.expected) 
@@ -618,10 +635,11 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
 
   for (const auto& test : negative_test_cases) {
-    std::optional<HadoopAuthToLocal::Rule> rule = HadoopAuthToLocal::initRule(test.input);
+    std::vector<std::string> fields = auth_to_local.extractFields("principal/host@EXAMPLE.COM");
+    std::optional<HadoopAuthToLocal::Rule> rule = auth_to_local.initRule(test.input);
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: " << test.input;
     std::optional<std::string> formatted_principal = auth_to_local.transformPrincipal(
-      *rule, test.principal);
+      *rule, test.principal, fields);
     ASSERT_FALSE(formatted_principal.has_value()) 
       << "Expected failure for principal: " << test.principal 
       << " with rule: " << test.input;
@@ -637,6 +655,8 @@ TEST(HadoopAuthToLocalTest, matchPrincipalAgainstAllRulesTest) {
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
   std::vector<std::string> rules = {
     R"(<configuration><property><name>hadoop.security.auth_to_local</name><value>
+RULE:[1:$1@$0](onlyfirstmatches@EXAMPLE.COM)s/@.*//
+RULE:[1:$1@$0](onlyfirstmatches@EXAMPLE.COM)s/.*/shouldnothappen/
 RULE:[1:$1@$0](ambari-qa-rangerkerberos@EXAMPLE.COM)s/.*/ambari-qa/
 RULE:[1:$1@$0](hbase-rangerkerberos@EXAMPLE.COM)s/.*/hbase/
 RULE:[1:$1@$0](hdfs-rangerkerberos@EXAMPLE.COM)s/.*/hdfs/
@@ -683,6 +703,10 @@ DEFAULT
 
   std::vector<TestCase> test_cases = {
     {
+      .principal = "onlyfirstmatches@EXAMPLE.COM",
+      .expected = "onlyfirstmatches",
+    },
+    {
       .principal = "ambari-qa-rangerkerberos@EXAMPLE.COM",
       .expected = "ambari-qa"
     },
@@ -714,7 +738,7 @@ DEFAULT
 
   std::istringstream rule_stream(rules[0]);
   ASSERT_TRUE(auth_to_local.setRules(rule_stream));
-  ASSERT_TRUE(auth_to_local.rules_.size() > 0); 
+  ASSERT_TRUE(auth_to_local.rulesByFields_.size() > 0); 
   EXPECT_EQ(auth_to_local.ruleMechanism_, HadoopAuthToLocal::RuleMechanism::MIT);
 
   for (const auto& test : test_cases) {
@@ -751,7 +775,7 @@ DEFAULT
   auth_to_local.setDefaultRealm("COMPANY.PRI");
   std::istringstream rule_stream_two(rules[1]);
   ASSERT_TRUE(auth_to_local.setRules(rule_stream_two));
-  ASSERT_TRUE(auth_to_local.rules_.size() > 0); 
+  ASSERT_TRUE(auth_to_local.rulesByFields_.size() > 0); 
 
 
   for (const auto& test : test_cases) {
@@ -889,9 +913,10 @@ TEST(HadoopAuthToLocalTest, testRegexMatch) {
   std::string bad_pattern = "(a+)+b";
   std::string evil_input = std::string(10000, 'a') + "X"; 
   std::regex reg(bad_pattern);
-  std::regex sed_match(".*"); 
+  HadoopAuthToLocal::SedRule sed_rule;
+  sed_rule.compiled_pattern = std::regex(".*");
 
-  auto result = HadoopAuthToLocal::match_regex(reg, sed_match, evil_input, 100); // 100ms
+  auto result = HadoopAuthToLocal::try_match_regex(reg, sed_rule, evil_input, 150); // 100ms
   EXPECT_EQ(result, std::nullopt);
 }
 } // namespace security
