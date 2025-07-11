@@ -89,6 +89,7 @@ DEFINE_string(spnego_keytab_file, "",
                "Absolute path to Kerberos keytab file "
                "for HTTP SPNEGO. If it is empty, --keytab_file flag will be used.");
 TAG_FLAG(spnego_keytab_file, advanced);
+
 DEFINE_string(core_site_path, "" ,
               "PATH to a core-site xml file. This allows "
               "loading auth-to-local rules from Hadoop's configuration, instead "
