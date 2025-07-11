@@ -49,7 +49,7 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
-
+#include "hadoop.h"
 #if defined(__APPLE__)
 // Almost all functions in the krb5 API are marked as deprecated in favor
 // of GSS.framework in macOS.
@@ -85,6 +85,12 @@ DEFINE_string(keytab_file, "",
               "to be used to authenticate RPC connections.");
 TAG_FLAG(keytab_file, stable);
 
+DEFINE_string(core_site_path, "" ,
+              "PATH to a core-site xml file. This allows "
+              "loading auth-to-local rules from Hadoop's configuration, instead "
+              "of relying on the system krb5.conf");
+TAG_FLAG(core_site_path, advanced);
+
 using std::mt19937;
 using std::nullopt;
 using std::optional;
@@ -105,6 +111,8 @@ namespace {
 // Global context for usage of the Krb5 library.
 krb5_context g_krb5_ctx;
 
+// Global instance of the HadoopAuthToLocal class, to map principals
+std::unique_ptr<HadoopAuthToLocal> g_hadoop_auth_to_local = nullptr;
 // This lock is used to avoid a race while reacquiring the kerberos ticket.
 // The race can occur between the time we reinitialize the cache and the
 // time when we actually store the new credentials back in the cache.
@@ -138,7 +146,14 @@ void InitKrb5Ctx() {
       char* unused_realm;
       CHECK_EQ(krb5_get_default_realm(g_krb5_ctx, &unused_realm), 0);
       krb5_free_default_realm(g_krb5_ctx, unused_realm);
-
+      
+      if(FLAGS_core_site_path.length() > 0) {
+        // If the Hadoop auth-to-local mapping is enabled, we use that instead of the krb5 library.
+        // This allows us to use the Hadoop configuration to map principals to local usernames.
+        g_hadoop_auth_to_local = HadoopAuthToLocal::init(
+          FLAGS_core_site_path, g_krb5_ctx);
+      }
+      
       g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
     });
 }
@@ -416,11 +431,33 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
   SCOPED_CLEANUP({
       krb5_free_principal(g_krb5_ctx, princ);
     });
+
+
+
+
   char buf[1024];
   krb5_error_code rc = KRB5_LNAME_NOTRANS;
   if (FLAGS_use_system_auth_to_local) {
     rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
   }
+
+  if(FLAGS_core_site_path.length() > 0 ) {
+    // If the Hadoop auth-to-local mapping is enabled, we use that instead of the krb5 library.
+    // This allows us to use the Hadoop configuration to map principals to local usernames.
+    if (!g_hadoop_auth_to_local) {
+      return Status::InvalidArgument("Hadoop auth-to-local mapping not initialized");
+    }
+    std::optional<std::string> hadoop_short_name =
+        g_hadoop_auth_to_local->matchPrincipalAgainstRules(principal);
+    if(hadoop_short_name.has_value()) {
+      if (hadoop_short_name.value().empty()) {
+        return Status::InvalidArgument("Principal mapped to empty username");
+      }
+      local_name->assign(hadoop_short_name.value());
+      return Status::OK();
+    }
+  }
+
   if (rc == KRB5_LNAME_NOTRANS || rc == KRB5_PLUGIN_NO_HANDLE) {
     // No name mapping specified, or krb5-based name mapping is disabled.
     //
