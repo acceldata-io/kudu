@@ -69,6 +69,7 @@ set(SECURITY_SRCS
   crypto.cc
   kerberos_util.cc
   gssapi.cc
+  hadoop.cc
   init.cc
   ${PORTED_X509_CHECK_HOST_CC}
   security_flags.cc
@@ -116,6 +117,7 @@ endif()
 
 if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
+    hadoop_tests.cc
     security-test-util.cc
     test/test_certs.cc
     test/test_pass.cc)
@@ -137,6 +139,7 @@ SET_KUDU_TEST_LINK_LIBS(
   security
   security_test_util)
 
+ADD_KUDU_TEST(hadoop_tests)
 ADD_KUDU_TEST(ca/cert_management-test)
 ADD_KUDU_TEST(cert-test)
 ADD_KUDU_TEST(crypto-test)
