@@ -919,5 +919,28 @@ TEST(HadoopAuthToLocalTest, testRegexMatch) {
   auto result = HadoopAuthToLocal::try_match_regex(reg, sed_rule, evil_input, 150); // 100ms
   EXPECT_EQ(result, std::nullopt);
 }
+
+TEST(PrincipalLRUCacheTest, LRUOrder) {
+  PrincipalLRUCache cache(2);
+  cache.put("a", "A");
+  cache.put("b", "B");
+
+  cache.get("a");
+  cache.put("c", "C");
+
+  EXPECT_FALSE(cache.get("b").has_value());
+
+  EXPECT_TRUE(cache.get("a").has_value());
+  EXPECT_TRUE(cache.get("c").has_value());
+}
+TEST(PrincipalLRUCacheTest, HandlesOptionalNone) {
+  PrincipalLRUCache cache(1);
+
+  cache.put("x", std::nullopt);
+  std::optional<std::optional<std::string>> value = cache.get("x");
+  ASSERT_TRUE(value.has_value());
+  EXPECT_FALSE(value.value().has_value()); 
+}
+
 } // namespace security
 } // namespace kudu

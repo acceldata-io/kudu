@@ -14,7 +14,6 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 #include <algorithm>
 #include <boost/foreach.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -967,7 +966,7 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(
 
 //This just walks through alll the rules, and the first one that matches is what we return
 std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
-  std::string_view principal) const
+  std::string_view principal)
 {
   std::shared_lock<std::shared_mutex> lock(mutex_);
   
@@ -976,6 +975,10 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
     return std::nullopt;
   }
 
+  std::optional<std::optional<std::string>> cached = cache_.get(std::string(principal));
+  if(cached.has_value()){
+    return cached.value();
+  }
   //Only check against rules that have a matching number of fields for the principal
   int num_fields = numberOfFields(principal);
   //This means something is wrong with the principal
@@ -992,6 +995,7 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
       std::optional<std::string> new_principal = transformPrincipal(rule, principal, fields);
       if(new_principal.has_value()) {
         LOG(INFO) << "Transformed principal: " << principal << " to " << new_principal.value() << " using rule: " << rule.rule;
+        cache_.put(std::string(principal), new_principal.value());
         return new_principal;
       }
     }
@@ -1007,6 +1011,7 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
         std::optional<std::string> new_principal = transformPrincipal(rule, principal, fields);
         if(new_principal.has_value()) {
           LOG(INFO) << "Transformed principal to DEFAULT: " << principal << " to " << new_principal.value() << " using rule: " << rule.rule;
+          cache_.put(std::string(principal), new_principal.value());
           return new_principal;
         }
       }

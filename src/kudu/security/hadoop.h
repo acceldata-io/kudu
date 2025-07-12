@@ -20,6 +20,8 @@
 #include <krb5/krb5.h>
 #include <locale>
 #include <map>
+#include <mutex>
+#include <list>
 #include <optional>
 #include <regex>
 #include <shared_mutex>
@@ -28,6 +30,44 @@
 
 namespace kudu{
 namespace security {
+class PrincipalLRUCache {
+private:
+  size_t max_size_;
+  mutable std::mutex mutex_;
+  std::list<std::string> list_;
+  std::unordered_map<
+    std::string,
+    std::pair<std::optional<std::string>, std::list<std::string>::iterator>
+  > map_;
+public:
+  explicit PrincipalLRUCache(size_t max_size) : max_size_(max_size) {}
+  std::optional<std::optional<std::string>> get(const std::string& key){
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = map_.find(key);
+    if (it == map_.end()) {
+      return std::nullopt;
+    }
+    list_.splice(list_.begin(), list_, it->second.second);
+    return it->second.first;
+  }
+  void put(const std::string& key, const std::optional<std::string>& value) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = map_.find(key);
+    if (it != map_.end()) {
+      it->second.first = value;
+      list_.splice(list_.begin(), list_, it->second.second);
+      return;
+    }
+    list_.push_front(key);
+    map_[key] = {value, list_.begin()};
+    if (map_.size() > max_size_) {
+      auto lru = list_.end();
+      --lru;
+      map_.erase(*lru);
+      list_.pop_back();
+    }
+  }
+};
 class HadoopAuthToLocal {
 
   static constexpr std::size_t kParseFields = 4;
@@ -62,6 +102,7 @@ class HadoopAuthToLocal {
   //std::vector<Rule> rules_;
   std::unordered_map<int, std::vector<Rule>> rulesByFields_;
   RuleMechanism ruleMechanism_ = RuleMechanism::HADOOP;
+  PrincipalLRUCache cache_{1024};
 
   mutable std::shared_mutex mutex_;
 
@@ -154,7 +195,8 @@ class HadoopAuthToLocal {
     //This should be the preferred way to initialize HadoopAuthToLocal
     static std::unique_ptr<HadoopAuthToLocal> init(const std::string& filepath, krb5_context& ctx);
     std::vector<std::string> getRules() const;
-    std::optional<std::string> matchPrincipalAgainstRules(std::string_view principal) const;
+    std::optional<std::string> matchPrincipalAgainstRules(std::string_view principal);
 };
+
 } // namespace security
 } // namespace kudu
