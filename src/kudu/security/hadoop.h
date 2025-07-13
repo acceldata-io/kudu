@@ -27,9 +27,9 @@
 #include <shared_mutex>
 #include <string>
 #include <vector>
-
 namespace kudu{
 namespace security {
+
 class PrincipalLRUCache {
 private:
   size_t max_size_;
@@ -43,19 +43,19 @@ public:
   explicit PrincipalLRUCache(size_t max_size) : max_size_(max_size) {}
   std::optional<std::optional<std::string>> get(const std::string& key){
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = map_.find(key);
-    if (it == map_.end()) {
+    auto iterator = map_.find(key);
+    if (iterator == map_.end()) {
       return std::nullopt;
     }
-    list_.splice(list_.begin(), list_, it->second.second);
-    return it->second.first;
+    list_.splice(list_.begin(), list_, iterator->second.second);
+    return iterator->second.first;
   }
   void put(const std::string& key, const std::optional<std::string>& value) {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = map_.find(key);
-    if (it != map_.end()) {
-      it->second.first = value;
-      list_.splice(list_.begin(), list_, it->second.second);
+    auto iterator = map_.find(key);
+    if (iterator != map_.end()) {
+      iterator->second.first = value;
+      list_.splice(list_.begin(), list_, iterator->second.second);
       return;
     }
     list_.push_front(key);
@@ -68,12 +68,21 @@ public:
     }
   }
 };
+
 class HadoopAuthToLocal {
 
   static constexpr std::size_t kParseFields = 4;
   static constexpr std::size_t kAtPosDefault = -2;
+  static constexpr uint kMaxStuckThreads = 4;
 
   enum class RuleMechanism {HADOOP, MIT};
+  enum class RegexResult {
+    Match,
+    NoMatch,
+    Error,
+    Timeout,
+  };
+
 
   struct SedRule {
     std::string pattern;
@@ -81,6 +90,7 @@ class HadoopAuthToLocal {
     std::string flags;
     std::regex compiled_pattern;
   };
+  
   struct Rule {
     int numberOfFields;
     std::string fmt;
@@ -89,17 +99,10 @@ class HadoopAuthToLocal {
     std::regex regexMatch;
     std::optional<SedRule> sedRule;
   };
-  struct Token {
-    enum class Type {placeholder, literal};
-    Type type;
-    std::string text;
-  };
-  using Token = HadoopAuthToLocal::Token;
 
   const std::locale loc_ = std::locale("");
   std::vector<std::string> coreSiteRules_;
   std::string defaultRealm_ ;
-  //std::vector<Rule> rules_;
   std::unordered_map<int, std::vector<Rule>> rulesByFields_;
   RuleMechanism ruleMechanism_ = RuleMechanism::HADOOP;
   PrincipalLRUCache cache_{1024};
@@ -111,7 +114,7 @@ class HadoopAuthToLocal {
   bool checkPrincipal(std::string_view principal, size_t at_pos = kAtPosDefault) const;
   int numberOfFields(std::string_view principal) const;
   std::optional<Rule> initRule(const std::string& auth_rule);
-  static std::optional<bool> try_match_regex(
+  RegexResult tryMatchRegex(
     const std::regex& reg, 
     const std::optional<SedRule>& sed_match, 
     std::string_view match_string, 
@@ -141,7 +144,7 @@ class HadoopAuthToLocal {
     const std::vector<std::string>& values) const;
 
   static std::optional<std::string> processJavaRegexLiterals(std::string_view input);
-  static std::optional<std::string> replaceMatchingPrincipal(
+  std::optional<std::string> replaceMatchingPrincipal(
     const Rule& rule, 
     const std::string& formatted_principal);
 
@@ -166,7 +169,8 @@ class HadoopAuthToLocal {
   std::optional<std::string> transformPrincipal(
     const Rule& rule,
     std::string_view principal, 
-    const std::vector<std::string>& fields) const;
+    const std::vector<std::string>& fields,
+    std::string_view realm);
 
 
   FRIEND_TEST(HadoopAuthToLocalTest, badFormatTest);
@@ -190,6 +194,7 @@ class HadoopAuthToLocal {
   FRIEND_TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest);
 
   public:
+    
     //This constructor does not load rules, or set the default realm. Use init instead.
     HadoopAuthToLocal();
     //This should be the preferred way to initialize HadoopAuthToLocal

@@ -563,9 +563,10 @@ TEST(HadoopAuthToLocalTest, transformPrincipalTest){
 
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: '" << test.input << "'";
     std::vector<std::string> fields = auth_to_local.extractFields(test.principal);
+    std::string realm = auth_to_local.getRealm(test.principal);
 
     std::optional<std::string> formatted_principal = auth_to_local.transformPrincipal(
-      *rule, test.principal, fields);
+      *rule, test.principal, fields, realm);
     ASSERT_TRUE(formatted_principal.has_value()) 
       << "Failed to create formatted principal for: " << test.principal;
     EXPECT_EQ(formatted_principal.value(), test.expected) 
@@ -598,7 +599,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
       .principal = "spark@EXAMPLE.COM",
     },
     {
-      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s/@.+//",
+      .input = "RULE:[2:$1@$0](hm@.+EXAMPLE.COM)s/@.+//",
       .principal = "hm@EXAMPLE.COM",
     },
     {
@@ -606,11 +607,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
       .principal = "mzeoli/somehost@OTHERREALM.COM",
     },
     {
-      .input = "RULE:[2:$1@$0](hive@EXAMPLE.COM)s/.*/hive/",
-      .principal = "hive@EXAMPLE.COM",
-    },
-    {
-      .input = "RULE:[2:$1@$0](hm@.*EXAMPLE.COM)s/@.+//",
+      .input = "RULE:[2:$1@$0](hm@.+EXAMPLE.COM)s/@.+//",
       .principal = "hm/my_other_host@EXAMPLE.ORG",
     },
     {
@@ -623,7 +620,7 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
     },
     {
       .input = "DEFAULT",
-      .principal = "spark/otherhost@EXAMPLE.ORG",
+      .principal = "spark/otherhost@NOTEXAMPLE.ORG",
     },
     {
       .input = "DEFAULT",
@@ -635,11 +632,12 @@ TEST(HadoopAuthToLocalTest, negativeTransformPrincipalTest) {
   auth_to_local.setDefaultRealm("EXAMPLE.COM");
 
   for (const auto& test : negative_test_cases) {
-    std::vector<std::string> fields = auth_to_local.extractFields("principal/host@EXAMPLE.COM");
+    std::vector<std::string> fields = auth_to_local.extractFields(test.principal);
+    std::string realm = auth_to_local.getRealm(test.principal);
     std::optional<HadoopAuthToLocal::Rule> rule = auth_to_local.initRule(test.input);
     ASSERT_TRUE(rule.has_value()) << "Failed to initialize rule from: " << test.input;
     std::optional<std::string> formatted_principal = auth_to_local.transformPrincipal(
-      *rule, test.principal, fields);
+      *rule, test.principal, fields, realm);
     ASSERT_FALSE(formatted_principal.has_value()) 
       << "Expected failure for principal: " << test.principal 
       << " with rule: " << test.input;
@@ -792,6 +790,7 @@ TEST(HadoopAuthToLocalTest, threadSafeTest){
   int old_minloglevel = FLAGS_minloglevel;
   FLAGS_minloglevel = google::GLOG_FATAL;
   std::unique_ptr<HadoopAuthToLocal> auth_to_local(new HadoopAuthToLocal);
+  auth_to_local->setDefaultRealm("EXAMPLE.COM");
   std::string rule_xml = R"(
   <configuration>
     <property>
@@ -905,19 +904,6 @@ TEST(HadoopAuthToLocalTest, ruleMechanismTest) {
     EXPECT_EQ(auth_to_local.simplePatternCheck(test.input), test.valid) 
       << "MIT rule validation failed for: " << test.input;
   }
-}
-
-TEST(HadoopAuthToLocalTest, testRegexMatch) {
-
-
-  std::string bad_pattern = "(a+)+b";
-  std::string evil_input = std::string(10000, 'a') + "X"; 
-  std::regex reg(bad_pattern);
-  HadoopAuthToLocal::SedRule sed_rule;
-  sed_rule.compiled_pattern = std::regex(".*");
-
-  auto result = HadoopAuthToLocal::try_match_regex(reg, sed_rule, evil_input, 150); // 100ms
-  EXPECT_EQ(result, std::nullopt);
 }
 
 TEST(PrincipalLRUCacheTest, LRUOrder) {

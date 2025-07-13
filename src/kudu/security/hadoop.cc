@@ -388,97 +388,6 @@ std::optional<std::string> HadoopAuthToLocal::parseSedFlags(std::string_view fla
   return result;
 }
 
-//This is so we can test the regex in a child process that we can kill if it takes too long
-//This could happen if some bad input is passed to a slightly too permissive regex
-std::optional<bool> HadoopAuthToLocal::try_match_regex(
-  const std::regex& reg,
-  const std::optional<SedRule>& sed_match_pattern,
-  std::string_view match_string, 
-  int milliseconds ) 
-{
-  static constexpr signed char SUCCESS = 1; 
-  static constexpr signed char FAILURE = 0;
-  static constexpr signed char ERROR = -1;
-
-  //We aren't always guaranteed to have a sed pattern
-  std::regex sed_match = sed_match_pattern.has_value() ? sed_match_pattern->compiled_pattern : std::regex({});
-
-  int pipefd[2];
-  if (pipe(pipefd) == -1) {
-    LOG(ERROR) << "Failed to create pipe for regex compilation: " << strerror(errno);
-    return std::nullopt;
-  }
-  pid_t pid = fork();
-  if (pid < 0){
-    close(pipefd[0]);
-    close(pipefd[1]);
-    return std::nullopt;
-  }
-  //child process
-  if(pid == 0){
-    close(pipefd[0]);
-    signed char succeeded = 0;
-    try {
-      bool result = std::regex_match(match_string.begin(), match_string.end(), reg) &&
-        std::regex_search(match_string.begin(), match_string.end(), sed_match);
-      succeeded = result ? SUCCESS : FAILURE;
-    } catch (...){
-      //If something went wrong with the regex, we can assume this failed
-      succeeded = ERROR;
-    }
-    write(pipefd[1], &succeeded, sizeof(succeeded));
-    close(pipefd[1]);
-    _exit(0);
-  } else {
-    close(pipefd[1]);
-    fd_set set;
-    FD_ZERO(&set);
-    FD_SET(pipefd[0], &set);
-
-    struct timeval timeout;
-    if(milliseconds < 0 ){
-      milliseconds = abs(milliseconds);
-    }
-
-    timeout.tv_sec =  milliseconds / 1000;
-    // Convert milliseconds to microseconds
-    timeout.tv_usec = (milliseconds % 1000) * 1000;
-
-    int ret = select(pipefd[0] + 1, &set, nullptr, nullptr, &timeout);
-
-    //Some value available
-    if(ret == 1){
-      signed char input = 2;
-      ssize_t bytes_read = read(pipefd[0], &input, sizeof(input));
-      close(pipefd[0]);
-      int status;
-      //clean up child
-      waitpid(pid, &status, 0);
-      if (bytes_read == 1){
-        //ERROR means an exception was throw in the child process
-        if (input == ERROR){
-          return std::nullopt;
-        }
-        return input == SUCCESS;
-      }
-    } else {
-      //If kill doesn't work, check why
-      if(kill(pid, SIGKILL) == -1){
-        if(errno == ESRCH) {
-          DLOG(INFO) << "Child process already exited, no need to kill it";
-        } else {
-          LOG(ERROR) << "Failed to kill child process: " << strerror(errno);
-        }
-      }
-      close(pipefd[0]);
-      int status;
-      waitpid(pid, &status, 0);
-    }
-  }
-
-  return std::nullopt;
-}
-
 //Parse out each section of the rule. Each rule must start with RULE:[
 //or it must be DEFAULT
 std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> 
@@ -793,23 +702,14 @@ std::optional<std::string> HadoopAuthToLocal::replaceMatchingPrincipal(
 
   std::regex_constants::match_flag_type regex_replace_flags = std::regex_constants::format_first_only;
   bool lowercase_output = false;
-  //This check here makes sure that the regex isn't going to be catastrophically bad for performance.
-  //We fork a process to check that the regex can actually finish matching the string
-  std::optional<bool> is_match = try_match_regex(
-    rule.regexMatch, 
-    rule.sedRule,
-    formatted_principal,
-    500);
-
-  if(!is_match.has_value()) {
-    return std::nullopt;
-  }
-  if(!is_match.value()) {
+  bool matches = std::regex_match(formatted_principal, rule.regexMatch);
+  
+  if(!matches){
     return std::nullopt;
   }
 
-  //This means that we had a match string, but no sed rule. We can return early
-  if(!rule.sedRule.has_value()){ 
+  //If we have a match and no sed rule, we can return the formatted principal directly
+  if (matches && !rule.sedRule.has_value()) {
     return formatted_principal;
   }
 
@@ -922,17 +822,22 @@ std::optional<std::string> HadoopAuthToLocal::createFormattedPrincipal(
   return format(rule.fmt, principal_fields);
 }
 
-//This is where everything is called. This checks the principal against every possible rule
+//This is where everything is called. This checks the principal against the specific rule passed
 std::optional<std::string> HadoopAuthToLocal::transformPrincipal(
   const Rule& rule, 
   std::string_view principal,
-  const std::vector<std::string>& fields) const
+  const std::vector<std::string>& fields,
+  std::string_view realm)
 {
-  if(!checkPrincipal(principal)){
+  if (realm.empty()){
+    LOG(ERROR) << "No realm for principal " << principal;
     return std::nullopt;
   }
-  std::string realm = getRealm(principal);
-  if (rule.fmt == "DEFAULT" && realm == this->defaultRealm_) {
+  if(this->defaultRealm_.empty()){
+    LOG(ERROR) << "Default realm is not set, cannot transform principal: " << principal;
+    return std::nullopt;
+  }
+  if (rule.fmt == "DEFAULT" && realm == this->defaultRealm_ ) {
     if(fields.size() >= 2){
       return fields[1];
     }
@@ -940,7 +845,7 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(
     return std::nullopt;
   } 
 
-  if (rule.fmt == "DEFAULT" && realm != this->defaultRealm_) {
+  if (rule.fmt == "DEFAULT" && realm != this->defaultRealm_)  {
     return std::nullopt;
   }
 
@@ -956,7 +861,8 @@ std::optional<std::string> HadoopAuthToLocal::transformPrincipal(
   }
 
   std::optional<std::string> output = replaceMatchingPrincipal(rule, formattedShortRule.value());
-  
+
+  //This changes depending on whether we use MIT or HADOOP rule mechanism
   if (output.has_value() && simplePatternCheck(output.value())) {
     return output;
   }
@@ -971,7 +877,8 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
   std::shared_lock<std::shared_mutex> lock(mutex_);
   
   if(this->rulesByFields_.empty()) {
-    LOG(ERROR) << "No auth_to_local rules loaded from Hadoop configuration";
+    //If there aren't any rules, kerberos authentication will fail
+    LOG(FATAL) << "No auth_to_local rules loaded from Hadoop configuration";
     return std::nullopt;
   }
 
@@ -979,6 +886,15 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
   if(cached.has_value()){
     return cached.value();
   }
+  std::string realm = getRealm(principal);
+
+  //This will make checking failed principals faster as well
+  if(!checkPrincipal(principal)){
+    LOG(INFO) << "Principal '" << principal << "' is invalid";
+    cache_.put(std::string(principal), std::nullopt);
+    return std::nullopt;
+  }
+
   //Only check against rules that have a matching number of fields for the principal
   int num_fields = numberOfFields(principal);
   //This means something is wrong with the principal
@@ -992,7 +908,7 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
   auto rulesIt = rulesByFields_.find(num_fields);
   if (rulesIt != rulesByFields_.end()) {
     for(const Rule& rule : rulesIt->second){
-      std::optional<std::string> new_principal = transformPrincipal(rule, principal, fields);
+      std::optional<std::string> new_principal = transformPrincipal(rule, principal, fields, realm);
       if(new_principal.has_value()) {
         LOG(INFO) << "Transformed principal: " << principal << " to " << new_principal.value() << " using rule: " << rule.rule;
         cache_.put(std::string(principal), new_principal.value());
@@ -1003,12 +919,12 @@ std::optional<std::string> HadoopAuthToLocal::matchPrincipalAgainstRules(
 
   //Otherwise check the default rule (a zero field rule)
   auto defaultIt = rulesByFields_.find(0);
-  if (defaultIt != rulesByFields_.end()) {
+  if (defaultIt != rulesByFields_.end() && realm == defaultRealm_) {
     for(const Rule& rule : defaultIt->second){
       //Only consider rules which are actually DEFAULT
       //There should ideally only be the one rule in this vector
       if (rule.fmt == "DEFAULT") {
-        std::optional<std::string> new_principal = transformPrincipal(rule, principal, fields);
+        std::optional<std::string> new_principal = transformPrincipal(rule, principal, fields, realm);
         if(new_principal.has_value()) {
           LOG(INFO) << "Transformed principal to DEFAULT: " << principal << " to " << new_principal.value() << " using rule: " << rule.rule;
           cache_.put(std::string(principal), new_principal.value());
