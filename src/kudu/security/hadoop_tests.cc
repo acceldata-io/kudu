@@ -141,9 +141,6 @@ TEST(HadoopAuthToLocalTest, parseAuthToLocalRuleTest){
     EXPECT_EQ(parsed_rule->at(2), test.expected[2]);
     EXPECT_EQ(parsed_rule->at(3), test.expected[3]);
   }
-  //R"(RULE:[2:$1@$0](.*@\QCOMPANY.PRI\E$)s/@\QCOMPANY.PRI\E$//)")
-  //"mzeoli/somehost@COMPANY.PRI"
-  //mzeoli
 }
 
 
@@ -163,8 +160,7 @@ TEST(HadoopAuthToLocalTest, badParseAuthToLocalRuleTest) {
   };
   HadoopAuthToLocal auth = HadoopAuthToLocal();
   auth.setDefaultRealm("EXAMPLE.COM");
-  std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> parsed_rule =
-    auth.parseAuthToLocalRule("RULE:[2:$1@$0](");
+  std::optional<std::array<std::string, HadoopAuthToLocal::kParseFields>> parsed_rule;
 
   for( const auto& rule : rules) {
     parsed_rule = auth.parseAuthToLocalRule(rule);
