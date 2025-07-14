@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env ambari-python-wrap
 
 #
 # Licensed to the Apache Software Foundation (ASF) under one
@@ -204,6 +204,7 @@ setup(
         'clean': clean,
         'build_ext': build_ext
     },
+
     install_requires=get_requirements(),
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,

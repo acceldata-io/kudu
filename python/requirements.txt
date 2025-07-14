@@ -1,2 +1,4 @@
 six==1.16.0
-pytz==2024.1
+pytz==2024.1; python_version < "3.9"
+cython==0.29.14; python_version == "2.7"
+cython==0.29.37; python_version >= "3.6"

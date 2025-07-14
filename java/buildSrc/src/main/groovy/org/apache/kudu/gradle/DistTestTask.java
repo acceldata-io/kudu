@@ -116,6 +116,10 @@ public class DistTestTask extends DefaultTask {
     return fc;
   }
 
+  public File getOutputDir() {
+    return this.outputDir;
+  }
+
   @TaskAction
   public void doStuff() throws IOException {
     getProject().delete(outputDir);
@@ -271,9 +275,9 @@ public class DistTestTask extends DefaultTask {
     final FileTree testClassFiles = testTask.getCandidateClassFiles();
     if (testTask.isScanForTestClasses()) {
       TestFrameworkDetector testFrameworkDetector = testTask.getTestFramework().getDetector();
-      testFrameworkDetector.setTestClasses(testTask.getTestClassesDirs().getFiles());
-      testFrameworkDetector.setTestClasspath(testTask.getClasspath().getFiles());
-      detector = new DefaultTestClassScanner(testClassFiles, testFrameworkDetector, processor);
+	  testFrameworkDetector.setTestClasses(new ArrayList<>(testTask.getTestClassesDirs().getFiles()));
+	  testFrameworkDetector.setTestClasspath(new ArrayList<>(testTask.getClasspath().getFiles()));
+	  detector = new DefaultTestClassScanner(testClassFiles, testFrameworkDetector, processor);
     } else {
       detector = new DefaultTestClassScanner(testClassFiles, null, processor);
     }

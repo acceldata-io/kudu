@@ -166,7 +166,9 @@ build_or_find_python() {
   if [ -n "$PYTHON_EXECUTABLE" ]; then
     return
   fi
-
+  if command -v ambari-python-wrap >/dev/null; then
+    PYTHON_EXECUTABLE=$(command -v ambari-python-wrap)
+  fi
   # Build Python only if necessary.
   if [[ $(python3 -V 2>&1) =~ "Python 3." ]]; then
     PYTHON_EXECUTABLE=$(which python3)
@@ -1125,7 +1127,11 @@ build_postgres() {
     --without-readline \
     --without-zlib
 
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  if grep -i -e "ubuntu" -e "debian" /etc/os-release >/dev/null ; then
+      make $EXTRA_MAKEFLAGS MAKELEVEL=0 install
+  else
+      make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  fi
   popd
 }
 
@@ -1141,7 +1147,7 @@ build_oatpp(){
     -DOATPP_DISABLE_ENV_OBJECT_COUNTERS=ON \
     -DOATPP_BUILD_TESTS=OFF \
     $OATPP_SOURCE
-  make -j$PARALLEL install
+  make MAKELEVEL=0 install
   popd
 }
 

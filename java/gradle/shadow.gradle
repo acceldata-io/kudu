@@ -20,7 +20,8 @@
 
 import org.gradle.api.internal.artifacts.publish.ArchivePublishArtifact
 
-apply plugin: "com.github.johnrengelman.shadow"
+//apply plugin: "com.github.johnrengelman.shadow"
+apply plugin: "com.gradleup.shadow"
 
 knows.enabled = false // Disable the "easter egg" knows task.
 knows.group = "" // Hide the "easter egg" knows task.
@@ -32,9 +33,9 @@ ext {
 }
 
 // Configure a shaded jar to replace the default jar
-shadowJar.classifier = null // Configure shadow jar to have the default classifier.
+//shadowJar.classifier = null // Configure shadow jar to have the default classifier.
 jar.finalizedBy(shadowJar)  // Generate the shaded jar anytime the jar task is run.
-jar.classifier = "unshaded" // Add an unshaded classifier to the default jar.
+//jar.classifier = "unshaded" // Add an unshaded classifier to the default jar.
 
 // Add the shadowJar to the published artifacts.
 artifacts {
@@ -49,6 +50,7 @@ configurations.archives.artifacts.removeAll {
 // Ensure we always relocate these shaded dependencies to the same
 // location across all modules.
 shadowJar {
+  zip64 true
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
   relocate "com.google.gradle.osdetector", "org.apache.kudu.shaded.com.google.gradle.osdetector"
   relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"
@@ -82,13 +84,13 @@ shadowJar {
 // By default shadow assumes all dependencies are shaded.
 configurations.create("compileUnshaded")
 configurations.shadow.extendsFrom(configurations.compileUnshaded)
-configurations.compile.extendsFrom(configurations.compileUnshaded)
+configurations.implementation.extendsFrom(configurations.compileUnshaded)
 
 // We use afterEvaluate to add additional configuration once all the definitions
 // in the projects build script have been applied
 afterEvaluate {
-  // Ensure compileUnshaded dependencies are included in the pom.
-  [install, uploadArchives].each { task ->
+//   Ensure compileUnshaded dependencies are included in the pom.
+  tasks.withType(Upload) { task ->
     task.repositories.each {
       configure(it.pom.scopeMappings) {
         // The priority value is arbitrary.
