@@ -36,6 +36,10 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
+// Code for proper sequencing of tcmalloc and OpenSSL initialization/shutdown
+// that runs before/after main().
+#include "kudu/util/before_and_after_main.h"  // IWYU pragma: keep
+
 DECLARE_bool(help);
 DECLARE_bool(helppackage);
 DECLARE_bool(helpshort);
