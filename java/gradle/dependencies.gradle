@@ -25,13 +25,20 @@ ext {
 }
 
 versions += [
+
+
+    annotations    : "6.0.53",
+    assertj        : "3.27.3",
     async          : "1.4.1",
     checkstyle     : "8.36.1",
     clojure        : "1.12.0",
-    clojureToolsCli: "1.1.230",
-    commonsIo      : "2.15.0",
-    errorProne     : "2.3.3",
-    errorProneJavac: "9+181-r4173-1",
+    clojureToolsCli  : "1.1.230",
+    commonsIo        : "2.15.0",
+    errorProne       : "2.3.3",
+    errorProneJavac  : "9+181-r4173-1",
+    flatbuffers         : "25.2.10",
+    flinkConnectorKudu  : "2.0.0-1.19",
+    flink          : "1.19.2",
     gradle         : "7.6.4",
     guava          : "33.3.1-jre",
     hadoop         : "3.4.3.3.4.3.0-1",
@@ -39,13 +46,13 @@ versions += [
     hdrhistogram   : "2.2.2",
     hive           : "4.1.0.3.4.3.0-1",
     httpClient     : "4.5.14",
-    jacoco         : "0.8.6",
+    jacoco         : "0.8.8",
     jepsen         : "0.1.5",
     jetty          : "9.4.57.v20241219",
     jmh            : "1.37",
     jsr305         : "3.0.2",
     junit          : "4.13.2",
-    log4j          : "2.24.3",
+    log4j          : "2.25.3",
     logCaptor      : "2.10.0",
     micrometer     : "1.8.2",
     mockito        : "4.2.0",
@@ -61,8 +68,10 @@ versions += [
     slf4j          : "1.7.36",
     spark2         : "2.4.8",
     spark          : "3.5.8.3.4.3.0-1",
-    spotBugs       : "4.1.1",
-    yetus          : "0.13.0"
+    spotBugs       : "4.2.2",
+    yetus          : "0.13.0",
+
+
 ]
 
 // Log the Gradle version used vs defined.
@@ -84,21 +93,34 @@ versions["scalaBase"] = versions.scala.substring(0, versions.scala.lastIndexOf("
 versions["sparkBase"] = versions.spark.substring(0, versions.spark.indexOf("."))
 
 libs += [
+    assertj              : "org.assertj:assertj-core:$versions.assertj",
+    annotations          : "org.apache.tomcat:annotations-api:$versions.annotations",
     async                : "com.stumbleupon:async:$versions.async",
     clojure              : "org.clojure:clojure:$versions.clojure",
     clojureToolsCli      : "org.clojure:tools.cli:$versions.clojureToolsCli",
     commonsIo            : "commons-io:commons-io:$versions.commonsIo",
     errorProne           : "com.google.errorprone:error_prone_core:$versions.errorProne",
     errorProneJavac      : "com.google.errorprone:javac:$versions.errorProneJavac",
+    flatbuffersJava      : "com.google.flatbuffers:flatbuffers-java:$versions.flatbuffers",
+    flinkClients         : "org.apache.flink:flink-clients:$versions.flink",
+    flinkConnectorBase   : "org.apache.flink:flink-connector-base:$versions.flink",
+    flinkCore            : "org.apache.flink:flink-core:$versions.flink",
+    flinkApiCommon       : "org.apache.flink:flink-api-common:$versions.flink",
+    flinkDist            : "org.apache.flink:flink-dist:$versions.flink",
+    flinkStreamingJava   : "org.apache.flink:flink-streaming-java:$versions.flink",
+    flinkConnectorKudu   : "org.apache.flink:flink-connector-kudu:$versions.flinkConnectorKudu",
+    flinkTestUtils       : "org.apache.flink:flink-test-utils:$versions.flink",
+    flinkStreamingJava   : "org.apache.flink:flink-streaming-java:$versions.flink",
     guava                : "com.google.guava:guava:$versions.guava",
     hadoopClient         : "org.apache.hadoop:hadoop-client:$versions.hadoop",
     hadoopCommon         : "org.apache.hadoop:hadoop-common:$versions.hadoop",
+    hadoopHdfs           : "org.apache.hadoop:hadoop-hdfs:$versions.hadoop",
     hadoopMiniCluster    : "org.apache.hadoop:hadoop-minicluster:$versions.hadoop",
     hadoopMRClientCommon : "org.apache.hadoop:hadoop-mapreduce-client-common:$versions.hadoop",
     hadoopMRClientCore   : "org.apache.hadoop:hadoop-mapreduce-client-core:$versions.hadoop",
     hamcrest             : "org.hamcrest:hamcrest:$versions.hamcrest",
     hdrhistogram         : "org.hdrhistogram:HdrHistogram:$versions.hdrhistogram",
-    hiveMetastore        : "org.apache.hive:hive-metastore:$versions.hive",
+    hiveMetastore        : "org.apache.hive:hive-standalone-metastore-server:$versions.hive",
     hiveTestUtils        : "org.apache.hive:hive-testutils:$versions.hive",
     httpClient           : "org.apache.httpcomponents:httpclient:$versions.httpClient",
     httpMime             : "org.apache.httpcomponents:httpmime:$versions.httpClient",
