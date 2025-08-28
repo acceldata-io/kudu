@@ -6,7 +6,7 @@ repositories {
 
     mavenCentral()
     mavenLocal()
-    maven { url "https://repo1.acceldata.dev/repository/odp-release/" }
+    maven { url "https://repo1.acceldata.dev/repository/odp-staging-release/" }
 }
 configurations.all {
     transitive = false
