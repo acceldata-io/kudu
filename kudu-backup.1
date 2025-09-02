@@ -1,0 +1,155 @@
+.TH KUDU-BACKUP 1 "August 2025" "Version 1.0" "User Commands"
+.SH NAME
+kudu-backup \- Simplify backing up and restoring Apache Kudu tables
+.SH SYNOPSIS
+.B kudu-backup
+<backup|restore> [options] <space separated table names>
+.SH DESCRIPTION
+.B kudu-backup
+is a utility for managing Apache Kudu table backups and restores.
+It simplifies the process of creating and restoring backups by automatically searching for the required JAR and Kudu master addresses if they are not specified.
+
+You must specify either
+.I backup
+or
+.I restore
+as the first command-line parameter. Otherwise you will see the help message.
+
+Tables to operate on are specified as a space-separated list at the end of the command. If no tables are specified, you will see the help message.
+
+Additional options can be passed directly to
+.B spark-submit
+.nf 
+by\~appending\~--\~and the extra options.
+.ni
+If no options are provided, reasonable defaults will be used.
+.TP
+\- The jarPath will be automatically searched for.
+.TP
+\- The kuduMasterAddresses will be read from /etc/kudu/conf/master.conf.
+.TP
+\- Users that are allowed to administer the Kudu cluster will be real from /etc/kudu/conf/master.conf.
+
+.SH OPTIONS
+.SS Common Options
+.TP
+.BR --jarPath " <path>"
+Path to kudu-backup jar file. If not defined, the jar will be automatically searched for.
+.TP
+.BR --kuduMasterAddresses " <addresses>"
+Comma-separated list of Kudu master addresses. If not defined, it will be read from /etc/kudu/conf/master.conf.
+.TP
+.BR --rootPath " <path>"
+Directory to store backup. Can be any Spark-compatible path. Defaults to hdfs:///kudu_backups.
+.TP
+.B --failOnFirstError
+Fail the job as soon as a single operation fails.
+.TP
+.B --help
+Show help message and exit.
+
+.SS Backup Options
+.TP
+.BR --fromMs " <ms>"
+Unix timestamp that defines the start time of an incremental backup.
+.TP
+.BR --timestampMs " <ms>"
+Unix timestamp in milliseconds since the epoch to execute scans at.
+.TP
+.BR --scanBatchSize " <bytes>"
+Maximum number of bytes returned by the scanner in each batch (default: 20MB).
+.TP
+.BR --scanRequestTimeoutMs " <ms>"
+Maximum duration (ms) for each scan request (default: 30000 ms).
+.TP
+.BR --keepAlivePeriodMs " <ms>"
+Period (ms) at which to send keep-alive requests to the tablet server.
+.TP
+.B --forceFull
+Force a full backup even if one already exists (default: false).
+
+.SS Restore Options
+.TP
+.BR --newDatabaseName " <name>"
+If set, replaces the existing database name or adds a new one.
+.TP
+.BR --tableSuffix " <suffix>"
+Adds the suffix to the restored table names.
+.TP
+.BR --timestampMs " <ms>"
+Unix timestamp in milliseconds that defines the latest time to use when selecting restore candidates.
+.TP
+.B --createTables
+Create the tables during restore. Do not specify this if the target tables already exist.
+.TP
+.B --removeImpalaPrefix
+Removes the "impala::" prefix from restored table names.
+.TP
+.B --restoreOwner
+Restores table ownership when creating new tables. Otherwise, the current user will be used.
+
+.SH USAGE
+You must specify either
+.B backup
+or
+.B restore
+as the first argument. This sets the class to be used for the rest of the command.
+
+kudu-backup can be run with minimal arguments, or with explicit options for full control.
+
+Tables must be specified as a space-separated list at the end of the command.
+
+Additional options can be passed directly to 
+.B spark-submit
+by appending\~'\fB--\fR'\~and then the desired options.
+.SH EXAMPLES
+.TP
+.B "# Backup multiple tables"
+.PP
+.nf
+kudu-backup backup --failOnFirstError --forceFull my_first_table my_second_table
+.fi
+.TP
+.B "# Restore multiple tables with specific options"
+.PP
+.nf
+kudu-backup restore --removeImpalaPrefix --restoreOwner my_first_table my_second_table
+.fi
+.TP
+.B "# Pass additional options to spark-submit"
+.PP
+.nf
+kudu-backup backup my_table -- --failOnFirstError true spark.executor.memory=4g
+.fi
+.SH FILES
+.TP
+.I /etc/kudu/conf/master.conf
+The default file used to discover Kudu master addresses, if not provided via --kuduMasterAddresses.
+Also used to find Kudu superusers.
+.TP
+.I /usr/odp/<version>/kudu/jars
+The folder containing bundled Kudu jars.
+The <version> directory is your ODP version, which can be found by running
+.nh 
+"\fBodp\-select\fR\~--version"
+.ny
+.SH SEE ALSO
+.TP
+.BR odp-select (1)
+Tool to select and display the current ODP version.
+
+.TP
+.BR Kudu
+Apache Kudu documentation:
+.IR https://kudu.apache.org/1.17.0/docs/
+
+.TP
+.BR spark-submit
+.nf
+Spark job submission tool. See:
+.ni
+.IR https://spark.apache.org/docs/latest/submitting-applications.html
+.SH AUTHOR
+Jeffrey Smith <jeffrey.smith@acceldata.io>
+.SH COPYRIGHT
+Copyright (C) 2025 Acceldata. All rights reserved.

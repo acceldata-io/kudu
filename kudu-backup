@@ -1,89 +1,254 @@
-#!/bin/sh
-#Licensed to the Apache Software Foundation (ASF) under one
-#or more contributor license agreements.  See the NOTICE file
-#distributed with this work for additional information
-#regarding copyright ownership.  The ASF licenses this file
-#to you under the Apache License, Version 2.0 (the
-#"License"); you may not use this file except in compliance
-#with the License.  You may obtain a copy of the License at
+#!/usr/bin/env perl
+
+# Copyright 2025 Acceldata
 #
-#  http://www.apache.org/licenses/LICENSE-2.0
-#
-#Unless required by applicable law or agreed to in writing,
-#software distributed under the License is distributed on an
-#"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-#KIND, either express or implied.  See the License for the
-#specific language governing permissions and limitations
-#under the License.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-OP=$(echo "$1" | tr '[:upper:]' '[:lower:]')
-shift
+#     http://www.apache.org/licenses/LICENSE-2.0
 
-if ! command -v spark-submit >/dev/null; then
-    printf "'spark-submit' not found\n" >&2
-    printf "Spark 3 is required to backup or restore Kudu tables\n" >&2
-    exit 1
-fi
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-if ! command -v kudu >/dev/null; then
-    printf "'kudu' not available in PATH\n" >&2
-    printf "Run this script on a machine with kudu installed\n" >&2
-    exit 1
-fi
+use 5.010;
+use strict;
+use warnings;
+use utf8;
+use File::Find;
+use Getopt::Long;
+use Pod::Usage;
+use Encode;
 
-if [ "$USER" != "kudu" ]; then
-    printf "Backing up tables must be done as the kudu user\n." >&2
-    printf "Your user is: '%s'\n" "$USER" >&2
-    exit 1
-fi
+Getopt::Long::Configure ("auto_abbrev");
+binmode STDOUT, ':encoding(UTF-8)';
+binmode STDERR, ':encoding(UTF-8)';
 
-if [ "$OP" != "backup" ] && [ "$OP" != "restore" ]; then
-    printf "Invalid option '%s'. Valid options are 'backup' or 'restore'\n" "$OP" >&2
-    printf "Either 'backup' or 'restore' must be the first argument when calling %s\n" "$0" >&2
-    exit 1
-fi
-
-OVERRIDE_PATH=false
-
-for arg in "$@"; do
-    if [ "$arg" = "--rootPath" ]; then
-        OVERRIDE_PATH=true
-        break
-    fi
-done
-
-if ! "$OVERRIDE_PATH"; then
-    BACKUP_PATH="--rootPath hdfs:///kudu_backups"
-fi
-
-JARS=$(find /usr/odp/"$(odp-select --version)"/kudu/ -name "kudu-backup*.jar" | grep -E "^/usr/odp/$(odp-select --version)/kudu/jars/kudu-backup[[:digit:]]+_[[:digit:]]+\.[[:digit:]]+-[[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+(-all)?.jar$")
-NUM_JARS=$( printf "%s" "$JARS" | wc -w)
-
-if [ "$NUM_JARS" -eq 0 ]; then
-    printf "No jars found\n" >&2
-    exit 1
-elif [ "$NUM_JARS" -eq 1 ]; then
-    JAR=$JARS
-elif [ "$NUM_JARS" -gt 1 ]; then
-    for jar in $JARS; do
-        JAR="$jar"
-        if printf "%s" "$jar" | grep -F "\-all.jar"; then
-            break
-        fi
-    done
-fi
-
-if [ -f /etc/kudu/conf/master.conf ]; then
-    MASTERS=$(awk -F= '$1 ~ "--master_addresses" {print $2}' /etc/kudu/conf/master.conf)
-else
-    printf "/etc/kudu/conf/master.conf not found. Is Kudu installed?\n" >&2
-    exit 1
-fi
+@ARGV = map { decode('UTF-8', $_) } @ARGV;
+my $default_backup_dir = "hdfs:///kudu_backups";
+my $default_master_conf = "/etc/kudu/conf/master.conf";
+# Needs to be investigated if it's possible to set this to another user
+# It should be possible to run this as a kudu superuser
+my %acceptable_user = ("kudu" => 1);
+# Only proceed if we've specified whether we're backing up or restoring
+my $command = shift @ARGV;
+$command = "" unless defined $command;
+$command = lc($command);
+usage() unless $command && ($command eq 'backup' || $command eq 'restore');
 
 
-#BACKUP_PATH has been left unquoted so that if it's empty, it will not be passed
-if [ "$OP" = "backup" ]; then
-    spark-submit --class org.apache.kudu.backup.KuduBackup "$JAR" --kuduMasterAddresses "$MASTERS" $BACKUP_PATH "$@"
-elif [ "$OP" = "restore" ]; then
-    spark-submit --class org.apache.kudu.backup.KuduRestore "$JAR" --kuduMasterAddresses "$MASTERS" $BACKUP_PATH "$@"
-fi
+sub usage {
+  my $header_help_text = "
+Usage: $0 <backup|restore> [options] <space separated table names>
+
+$0 can be used to simplify backing up and restoring Kudu tables. If no options
+are specified, reasonable defaults will be used.
+
+Tables must be specified as a space separated list at the end of the command.
+
+Additional options can be directly passed to spark-submit by appending '--' and adding the additional options.
+
+Common Options:
+  --jarPath              <path>      Path to kudu-backup jar file. If not defined, the jar will be automatically search for
+  --kuduMasterAddresses  <addresses> Comma-separated list of Kudu master addresses. If not defined, it will be read from $default_master_conf
+  --rootPath             <path>      Directory to store backup. This can be any spark compatible path. Defaults to $default_backup_dir
+  --failOnFirstError                 Whether to fail the restore/backup job as soon as a single operation fails
+  --verbose                          Set verbose output. This will print additional information about the operations being performed
+  --help                             Show this help message
+";
+
+my $footer_help_text = "
+See the manpage for additional details and examples.";
+
+my $backup_help_text =" 
+Backup Options:
+  --fromMs               <ms>        A unix timestamp that defines the start time of an incremental backup
+  --timestampMs          <ms>        A unix timestamp in milliseconds since the epoch to execute scans at
+  --scanBatchSize        <bytes>     The max number of bytes returned by the scanner on each batch. Default 20MB
+  --scanRequestTimeoutMs <ms>        Sets how long in milliseconds each scan request can last. Defaults to 30000 ms
+  --keepAlivePeriodMs    <value>     Sets the period at which to send keep-alive requests to the tablet server
+  --forceFull                        Force a full backup even if one already exists. Defaults to false
+";
+
+my $restore_help_text = "
+Restore Options:
+  --newDatabaseName      <name>      If set, replaces the existing database name or adds a new one
+  --tableSuffix          <suffix>    If set, add the suffix to the restored table names
+  --timestampMs          <ms>        A unix timestamp in milliseconds that defines the latest time to use when selecting restore candidates
+  --createTables                     Creates the tables during restore. Don't specify if the target tables already exist
+  --removeImpalaPrefix               Removes the \"impala::\" prefix from restored table names
+  --restoreOwner                     Restores table ownership when creating new tables. Otherwise, the current user will be used instead
+";
+my $help_text = "$header_help_text";
+if ($command eq 'backup') {
+  $help_text = $help_text . $backup_help_text . $footer_help_text;
+}
+elsif ($command eq 'restore') {
+  $help_text = $help_text . $restore_help_text . $footer_help_text;
+}
+else {
+  $help_text = $help_text . $backup_help_text . $restore_help_text . $footer_help_text;
+}
+  print <<"USAGE";
+$help_text
+USAGE
+  exit 1;
+}
+
+
+# Common options
+my ($jarPath, $kuduMasterAddresses, $rootPath, $help, $failOnFirstError);
+
+# Backup options
+my ($forceFull, $fromMs, $timestampMs, $scanBatchSize, $scanRequestTimeoutMs, $keepAlivePeriodMs);
+
+# Restore options
+my ($createTables, $removeImpalaPrefix, $newDatabaseName, $tableSuffix, $restoreOwner);
+
+GetOptions(
+  # Common
+  "jarPath=s"              => \$jarPath,
+  "kuduMasterAddresses=s"  => \$kuduMasterAddresses,
+  "rootPath=s"             => \$rootPath,
+  "failOnFirstError!"      => \$failOnFirstError,
+  "help"                   => \$help,
+
+  # Backup
+  "forceFull!"             => \$forceFull,
+  "fromMs=i"               => \$fromMs,
+  "timestampMs=i"          => \$timestampMs,
+  "scanBatchSize=i"        => \$scanBatchSize,
+  "scanRequestTimeoutMs=i" => \$scanRequestTimeoutMs,
+  "keepAlivePeriodMs=i"    => \$keepAlivePeriodMs,
+
+  # Restore
+  "createTables!"          => \$createTables,
+  "removeImpalaPrefix!"    => \$removeImpalaPrefix,
+  "newDatabaseName=s"      => \$newDatabaseName,
+  "tableSuffix=s"          => \$tableSuffix,
+  "restoreOwner!"          => \$restoreOwner,
+) or pod2usage(2);
+usage() if defined $help;
+
+say "$jarPath" if defined $jarPath;
+# Strictly speaking, this will be whatever extra options are passed
+my @tables = @ARGV;
+usage() unless @tables > 0;
+
+if (-f $default_master_conf) {
+  open my $fh, "<", $default_master_conf or die "Can't open $default_master_conf: $!\n";
+  while (<$fh>) {
+    chomp;
+    my ($key, $value) = split(/=/, $_, 2);
+    # Skip this iteration if we don't get a key value pair from the above split 
+    next unless defined $key && defined $value;
+    if ($key eq "--superuser_acl") {
+      # We get each of the users defined as a superuser from the master config.
+      # Later, we'll use this to ensure the current user is one of them in order
+      # to make sure they have the required privileges to manage a Kudu cluster
+      # For the moment, this isn't hugely important, but in the future, we may
+      # be supporting arbitrary user names for all services
+      my @superusers = split(/,/, $value);
+      foreach (@superusers) {
+        $acceptable_user{$_} = 1;
+      }
+
+      last;
+    }
+  }
+  close $fh;
+  
+
+}
+
+# Backup and restore must be run as the 'kudu' user
+my $whoami = getpwuid($>);
+if (!exists $acceptable_user{$whoami}) {
+  die "This script must be run as a Kudu super user. Current user '$whoami' is not a Kudu super user\n";
+}
+
+# Set the default path so that it isn't required to pass that option
+# rootPath must be a spark compatible path
+$rootPath //= $default_backup_dir;
+
+unless (defined $jarPath && length $jarPath) {
+  my $odp_version = `odp-select --version`;
+  # odp-select has a newline in its output, so we remove it
+  chomp($odp_version);
+  my $base_dir = "/usr/odp/$odp_version/kudu/jars" ;
+  
+  my $largest_size = 0;
+  my $largest_file = '';
+
+  find(sub {
+      # If it's not a file, skip it
+      return unless -f;
+      # If it doesn't match the kudu-backup jar, skip it
+      return unless /kudu-backup[3-9].*\.jar$/;
+      # Get the size of the file in bytes
+      # The biggest jar that matches the above pattern is the one
+      # with all of the dependencies included in the jar.
+      my $size = -s $_;
+      if ($size > $largest_size) {
+          $largest_size = $size;
+          # store the full path of the file
+          $largest_file = $File::Find::name;
+      }
+    }, $base_dir);
+  if ($largest_file) {
+    die "Found jar file at $largest_file is an empty file\n" unless $largest_size > 0;
+    $jarPath= $largest_file;
+  } else {
+    die "No kudu-backup jar file found in $base_dir\n";
+  }
+}
+
+unless (defined $kuduMasterAddresses && length $kuduMasterAddresses) {
+  open my $fh, "<", $default_master_conf or die "Can't open $default_master_conf: $!\n";
+  while (<$fh>) {
+    chomp;
+    my ($key, $value) = split /=/, $_, 2;
+    # Skip this iteration if we don't get a key value pair from the above split 
+    next unless defined $key && defined $value;
+    if ($key eq "--master_addresses") {
+      $kuduMasterAddresses = $value;
+      last;
+    }
+  }
+  close $fh;
+  unless (defined $kuduMasterAddresses && length $kuduMasterAddresses) {
+    die "No Kudu master addresses specified and could not read from $default_master_conf\n";
+  }
+}
+
+my @args;
+
+if ($command eq "backup"){
+  push @args, "--class", "org.apache.kudu.backup.KuduBackup", $jarPath;
+  push @args, "--forceFull", $forceFull ? "true" : "false" if defined $forceFull;
+  push @args, "--fromMs", $fromMs if defined $fromMs;
+  push @args, "--timestampMs", $timestampMs if defined $timestampMs;
+  push @args, "--scanBatchSize", $scanBatchSize if defined $scanBatchSize;
+  push @args, "--scanRequestTimeoutMs", $scanRequestTimeoutMs if defined $scanRequestTimeoutMs;
+  push @args, "--keepAlivePeriodMs", $keepAlivePeriodMs if defined $keepAlivePeriodMs;
+}
+elsif ($command eq "restore"){
+  push @args, "--class", "org.apache.kudu.backup.KuduRestore", $jarPath;
+  push @args, "--createTables", $createTables ? "true" : "false" if defined $createTables;
+  push @args, "--removeImpalaPrefix", $removeImpalaPrefix ? "true" : "false" if defined $removeImpalaPrefix;
+  push @args, "--newDatabaseName", $newDatabaseName if defined $newDatabaseName;
+  push @args, "--tableSuffix", $tableSuffix if defined $tableSuffix;
+  push @args, "--restoreOwner", $restoreOwner ? "true" : "false" if defined $restoreOwner;
+}
+
+push @args, "--failOnFirstError", $failOnFirstError ? "true" : "false" if defined $failOnFirstError;
+push @args, "--kuduMasterAddresses", $kuduMasterAddresses;
+push @args, "--rootPath", $rootPath;
+
+push @args, @tables;
+
+system("spark-submit", @args) == 0 or die "Command failed: $!\n";
+
