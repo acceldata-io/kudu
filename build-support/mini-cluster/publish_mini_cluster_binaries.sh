@@ -164,7 +164,7 @@ function maven_action() {
     ARGS="$ARGS -DrepositoryId=apache"
     ARGS="$ARGS -Drepo.username=$MVN_USERNAME"
     ARGS="$ARGS -Drepo.password=$MVN_PASSWORD"
-    mvn gpg:sign-and-deploy-file ${ARGS}
+    mvn deploy:deploy-file ${ARGS}
   fi
 }
 
