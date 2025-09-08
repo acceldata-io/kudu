@@ -125,7 +125,7 @@ SaslClientTransport::SaslClientTransport(string service_principal,
   ResetWriteBuf();
 }
 
-bool SaslClientTransport::isOpen() const {
+bool SaslClientTransport::isOpen() {
   return transport_->isOpen();
 }
 
