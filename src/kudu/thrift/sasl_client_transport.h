@@ -87,7 +87,7 @@ class SaslClientTransport
 
   ~SaslClientTransport() override = default;
 
-  bool isOpen() const override;
+  bool isOpen() override;
 
   bool peek() override;
 
