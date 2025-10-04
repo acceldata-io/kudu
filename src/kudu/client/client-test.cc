@@ -10175,5 +10175,360 @@ TEST_F(ClientTestAutoIncrementingColumn, CreateTableFeatureFlag) {
       Substitute("Error creating table $0 on the master: cluster does not support "
                  "CreateTable with feature(s) AUTO_INCREMENTING_COLUMN", kTableName));
 }
+
+class ClientTestMetacache : public ClientTest {
+ public:
+  // Helper method to reproduce the stack overflow scenario caused
+  // due to a bug in client metacache code where it ends up in infinite
+  // recursion loop:
+  // 1. Using object's existing client_ for DDL ops, start by creating
+  //    a table with a range partition
+  // 2. Using a new DML client (client_insert_ops), insert a row
+  // 3. Using DDL client (client_), drop the partition
+  // 4. Using DDL client (client_), add a partition with same range
+  // 5. Using insert client (client_insert_ops), insert a row again
+  // 6. If fix (to avoid infinite recursion) is enabled:
+  //      - #5 is expected to fail with "invalid tablet" error
+  //      - Re-insert of row using same client is expected to pass
+  //        as cache invalidation has happened in previous step.
+  // 7. If fix (to avoid infinite recursion) is disabled:
+  //      - #5 is expected to cause a crash due to stack overflow
+  void TestClientMetacacheHelper(const string& table_name) {
+    // Create a partition boundary [0, 1)
+    unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+
+    // Create a table with above range partition using client_
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+
+    // Add a range partition
+    table_creator->add_range_partition(lower_bound.release(),
+                                       upper_bound.release());
+
+    // Create the table
+    ASSERT_OK(table_creator->table_name(table_name)
+                            .schema(&schema_)
+                            .num_replicas(1)
+                            .set_range_partition_columns({ "key" })
+                            .Create());
+
+    // Create a new client for update/insert ops
+    shared_ptr<KuduClient> client_insert_ops;
+    shared_ptr<KuduTable> table_insert_ops;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_insert_ops));
+    ASSERT_OK(client_insert_ops->OpenTable(table_name, &table_insert_ops));
+
+    // Insert a row to the partition using client_insert_ops
+    NO_FATALS(InsertTestRows(client_insert_ops.get(), table_insert_ops.get(),
+                             1, 0));
+
+    // Drop the range partitions using the DDL client i.e. client_
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    lower_bound.reset(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    upper_bound.reset(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    alterer->DropRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(alterer->Alter());
+
+    // Add same range again using same DDL client i.e. client_
+    // This, essentially, adds a new partition with same range
+    // but with a different incarnation (a new generation, if you will).
+    // Any subsequent DML op is expected to consult the new metacache
+    // entry that represents the new tablet generation as the previous
+    // cache entry is not valid anymore.
+    alterer.reset(client_->NewTableAlterer(table_name));
+    lower_bound.reset(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    upper_bound.reset(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    alterer->AddRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(alterer->Alter());
+
+    if (FLAGS_prevent_kudu_3461_infinite_recursion) {
+      // Insert a row to the table using same insert client i.e. client_insert_ops
+      // This is expected to fail with "Status::InvalidArgument()" error
+      NO_FATALS(InsertTestRowsWithInvalidArgError(client_insert_ops.get(),
+                                                  table_insert_ops.get(),
+                                                  1, 0));
+
+      // Try inserting row again. This time it is expected to succeed
+      NO_FATALS(InsertTestRows(client_insert_ops.get(), table_insert_ops.get(),
+                               1, 0));
+    } else {
+      // Death tests use fork(), which is unsafe particularly in a threaded
+      // context. For this test, Google Test detected more than one threads. See
+      // https://github.com/google/googletest/blob/master/docs/advanced.md#death-tests-and-threads
+      // for more explanation. If not set to "threadsafe", the test gets stuck.
+      GTEST_FLAG_SET(death_test_style, "threadsafe");
+
+      // Insert a row to the table using same insert client i.e. client_insert_ops
+      // This is expected to crash due to stack overflow
+      ASSERT_DEATH((InsertTestRows(client_insert_ops.get(),
+                                   table_insert_ops.get(),
+                                   1, 0)), "");
+    }
+  }
+};
+
+// The purpose of this test is to verify case of infinite recursion
+// caused due to stale cache entry for a deleted tablet being re-created
+// via one client and populated with a row using a different client.
+// Refer KUDU-3461 for more details. The infinite recursion ends up in stack
+// overflow crash.
+TEST_F(ClientTestMetacache, TestClientMetacacheRecursion) {
+  FLAGS_prevent_kudu_3461_infinite_recursion = false;
+  TestClientMetacacheHelper(CURRENT_TEST_NAME());
+}
+
+// The purpose of this test is to verify fix for stack overflow by
+// avoiding infinite recursion and returning an error back to client
+// upon detection of stale cache entry for deleted tablet and cleanup
+// the stale client cache entry. Subsequent insert is expected to succeed.
+// Refer KUDU-3461 for more details.
+TEST_F(ClientTestMetacache, TestClientMetacacheInvalidation) {
+  FLAGS_prevent_kudu_3461_infinite_recursion = true;
+  TestClientMetacacheHelper(CURRENT_TEST_NAME());
+}
+
+// KUDU-3704 regression test.
+TEST_F(ClientTestMetacache, VerboseLogCrash) {
+  const string table_name = "kudu3704";
+
+  // Set very short TTL for table locations.
+  FLAGS_table_locations_ttl_ms = 100;
+
+  {
+    // Create the test table with a single range partition and the rest of the
+    // key space non-covered. Use the 'client_' for the DDL operation.
+    unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 0));
+    unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 1));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    table_creator->add_range_partition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(table_creator->table_name(table_name)
+                            .schema(&schema_)
+                            .num_replicas(1)
+                            .set_range_partition_columns({ "key" })
+                            .Create());
+  }
+
+  // Create a separate client for DML operations.
+  shared_ptr<KuduClient> dml_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &dml_client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(dml_client->OpenTable(table_name, &table));
+
+  // Insert a single row into the existing range: this is at least to populate
+  // the client's metacache with entries.
+  NO_FATALS(InsertTestRows(dml_client.get(), table.get(), 1, 0));
+
+  {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(table_name));
+    unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+    ASSERT_OK(lower_bound->SetInt32("key", 1));
+    unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+    ASSERT_OK(upper_bound->SetInt32("key", 2));
+    alterer->AddRangePartition(lower_bound.release(), upper_bound.release());
+    ASSERT_OK(alterer->Alter());
+  }
+
+  // Increase log level to print out verlbose logs up to level 2.
+  client::SetVerboseLogLevel(2);
+
+  // Let the entries in the dml_client's meta-cache expire, and try to insert
+  // a row into the newly added range partition. Of course this should succeed,
+  // but prior to KUDU-3704 fix it would crash.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_table_locations_ttl_ms));
+  NO_FATALS(InsertTestRows(dml_client.get(), table.get(), 1, 1));
+}
+
+namespace {
+const vector<DataType> kArrayElemTypes = {
+  DataType::BOOL,
+  DataType::INT8,
+  DataType::INT16,
+  DataType::INT32,
+  DataType::INT64,
+  DataType::BINARY,
+  DataType::STRING,
+  DataType::FLOAT,
+  DataType::DOUBLE,
+  DataType::UNIXTIME_MICROS,
+  DataType::DATE,
+  DataType::DECIMAL32,
+  DataType::DECIMAL64,
+  DataType::VARCHAR,
+};
+} // anonymous namespace
+
+class ArrayColumnParamTest :
+    public ClientTest,
+    public ::testing::WithParamInterface<tuple<DataType, bool, bool>> {
+ public:
+
+  template<DataType T>
+  void TestEmptyAndNullArraysImpl() {
+    typedef ArrayTypeTraits<T> ArrayType;
+    typedef typename ArrayTypeTraits<T>::element_cpp_type ElementType;
+
+    const bool is_null_array_cell = std::get<1>(GetParam());
+    const bool flush_tablet_data = std::get<2>(GetParam());
+    const string table_name = Substitute("table_ea_$0_$1",
+        flush_tablet_data ? "flush" : "noflush", DataType_Name(T));
+
+    KuduColumnTypeAttributes attrs;
+    if constexpr (T == DECIMAL32) {
+      attrs = KuduColumnTypeAttributes(6, 2);
+    } else if constexpr (T == DECIMAL64) {
+      attrs = KuduColumnTypeAttributes(18, 2);
+    } else if constexpr (T == VARCHAR) {
+      attrs = KuduColumnTypeAttributes(10);
+    }
+    ASSERT_OK(CreateTableWithArrayColumns(
+        table_name, { FromInternalDataType(T) }, attrs));
+
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(table_name, &table));
+    {
+      const auto& schema = table->schema();
+      ASSERT_EQ(2, schema.num_columns());
+    }
+
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt64(0, 42));
+    if (is_null_array_cell) {
+      ASSERT_OK(insert->mutable_row()->SetNull(1));
+    } else {
+      ASSERT_OK(insert->mutable_row()->SetArray<ArrayType>(1, {}, {}));
+    }
+    ASSERT_OK(session->Apply(insert.release()));
+    FlushSessionOrDie(session);
+
+    if (flush_tablet_data) {
+      // Flush data to disk, so it's read from there, not from MRS.
+      const string tablet_id = GetFirstTabletId(table.get());
+      ASSERT_OK(cluster_->FlushTablet(tablet_id));
+    }
+
+    // To read the written data back, use a projection with the index
+    // and the array columns.
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetProjectedColumnIndexes({ 0, 1 }));
+    ASSERT_OK(scanner.Open());
+
+    const auto& schema = KuduSchema::ToSchema(scanner.GetProjectionSchema());
+    size_t row_stride = ContiguousRowHelper::row_size(schema);
+
+    size_t row_count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      ASSERT_OK(scanner.NextBatch(&batch));
+      for (const KuduScanBatch::RowPtr& row : batch) {
+        int64_t key_val;
+        ASSERT_OK(row.GetInt64(0, &key_val));
+        ASSERT_EQ(42, key_val);
+
+        if (is_null_array_cell) {
+          ASSERT_TRUE(row->IsNull(1));
+        } else {
+          ASSERT_FALSE(row->IsNull(1));
+        }
+
+        // Retrive array data using typed getters.
+        {
+          vector<ElementType> data;
+          vector<bool> validity;
+          if (is_null_array_cell) {
+            const auto s = row->GetArray<TypeTraits<T>>(1, &data, &validity);
+            ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+            ASSERT_STR_CONTAINS(s.ToString(), "column is NULL");
+          } else {
+            ASSERT_OK(row->GetArray<TypeTraits<T>>(1, &data, &validity));
+            ASSERT_TRUE(data.empty());
+            ASSERT_TRUE(validity.empty());
+          }
+        }
+
+        // Retrieve raw array cell data. From the raw data access point,
+        // both empty and null array cells look similar when accessing
+        // the data via KuduArrayCellView: both the KuduArrayCellView::data()
+        // and KuduArrayCellView::not_null_bitmap() should return nullptr.
+        {
+          const void* cell_raw = row.cell(1);
+          ASSERT_NE(nullptr, cell_raw);
+
+          const uint8_t* row_data =
+              batch.direct_data().data() + row_stride * row_count;
+          const Slice* raw_array_cell = reinterpret_cast<const Slice*>(
+              ContiguousRowHelper::cell_ptr(schema, row_data, 1));
+
+          KuduArrayCellView view(raw_array_cell->data(), raw_array_cell->size());
+          ASSERT_OK(view.Init());
+          ASSERT_TRUE(view.empty());
+          ASSERT_EQ(0, view.elem_num());
+          const auto* raw_values = view.data(FromInternalDataType(T), {});
+          ASSERT_EQ(nullptr, raw_values);
+          const auto* validity_bitmap = view.not_null_bitmap();
+          ASSERT_EQ(nullptr, validity_bitmap);
+        }
+        ++row_count;
+      }
+    }
+    ASSERT_EQ(1, row_count);
+    ASSERT_OK(client_->DeleteTable(table_name));
+  }
+
+  void TestEmptyAndNullArrays() {
+    const auto elem_type = std::get<0>(GetParam());
+    switch (elem_type) {
+      case DataType::BOOL:
+        return TestEmptyAndNullArraysImpl<DataType::BOOL>();
+      case DataType::INT8:
+        return TestEmptyAndNullArraysImpl<DataType::INT8>();
+      case DataType::INT16:
+        return TestEmptyAndNullArraysImpl<DataType::INT16>();
+      case DataType::INT32:
+        return TestEmptyAndNullArraysImpl<DataType::INT32>();
+      case DataType::INT64:
+        return TestEmptyAndNullArraysImpl<DataType::INT64>();
+      case DataType::BINARY:
+        return TestEmptyAndNullArraysImpl<DataType::BINARY>();
+      case DataType::STRING:
+        return TestEmptyAndNullArraysImpl<DataType::STRING>();
+      case DataType::FLOAT:
+        return TestEmptyAndNullArraysImpl<DataType::FLOAT>();
+      case DataType::DOUBLE:
+        return TestEmptyAndNullArraysImpl<DataType::DOUBLE>();
+      case DataType::UNIXTIME_MICROS:
+        return TestEmptyAndNullArraysImpl<DataType::UNIXTIME_MICROS>();
+      case DataType::DATE:
+        return TestEmptyAndNullArraysImpl<DataType::DATE>();
+      case DataType::DECIMAL32:
+        return TestEmptyAndNullArraysImpl<DataType::DECIMAL32>();
+      case DataType::DECIMAL64:
+        return TestEmptyAndNullArraysImpl<DataType::DECIMAL64>();
+      case DataType::VARCHAR:
+        return TestEmptyAndNullArraysImpl<DataType::VARCHAR>();
+      default:
+        FAIL() << "unexpected array element type " << DataType_Name(elem_type);
+    }
+  }
+};
+INSTANTIATE_TEST_SUITE_P(Params, ArrayColumnParamTest,
+                         testing::Combine(testing::ValuesIn(kArrayElemTypes),
+                                          testing::Bool(),  // is null
+                                          testing::Bool()));// flush/no flush
+
+TEST_P(ArrayColumnParamTest, EmptyAndNullArrays) {
+  NO_FATALS(TestEmptyAndNullArrays());
+}
+
 } // namespace client
 } // namespace kudu

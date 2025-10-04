@@ -1223,6 +1223,8 @@ bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
 
   // Stale entries must be re-fetched.
   if (e->stale()) {
+    VLOG(2) << Substitute("Table $0: stale entry must be re-fetched: $1",
+                          table->name(), e->DebugString(table));
     return false;
   }
 
