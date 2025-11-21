@@ -721,9 +721,7 @@ build_curl() {
   # In the scope of using libcurl in Kudu tests and other simple scenarios,
   # not so much functionality is needed as of now, so configure for a fairly
   # minimal install. For testing, we need HTTP/HTTPS with GSSAPI support
-  # (GSSAPI is needed for SPNEGO testing). Also, cookies might be useful
-  # to test the new functionality introduced in Impala's embedded Web server
-  # recently if Kudu is to pick up the new functionality as well.
+  # (GSSAPI is needed for SPNEGO testing).
   #
   # NOTE: curl shows a message asking for CPPFLAGS to be used for include
   #       directories, not CFLAGS.
@@ -735,34 +733,67 @@ build_curl() {
     $CURL_SOURCE/configure \
     --prefix=$PREFIX \
     --disable-alt-svc \
+    --disable-aws \
+    --disable-cookies \
+    --disable-dateparse \
     --disable-dict \
+    --disable-docs \
     --disable-doh \
     --disable-file \
+    --disable-form-api  \
     --disable-ftp \
+    --disable-headers-api \
+    --disable-hsts \
+    --disable-httpsrr \
     --disable-gopher \
     --disable-imap \
+    --disable-ipfs \
     --disable-ipv6 \
     --disable-ldap \
     --disable-ldaps \
     --disable-libcurl-option \
     --disable-manual \
     --disable-mime \
+    --disable-mqtt \
     --disable-netrc \
-    --disable-parsedate \
+    --disable-ntlm \
     --disable-pop3 \
     --disable-progress-meter \
     --disable-rtsp \
+    --disable-sha512-256 \
     --disable-smb \
     --disable-smtp \
+    --disable-sspi \
     --disable-telnet \
     --disable-tftp \
+    --disable-tls-srp \
+    --disable-unix-sockets \
+    --disable-websockets \
+    --enable-basic-auth \
+    --enable-bearer-auth \
+    --enable-digest-auth \
+    --enable-http-auth \
+    --enable-kerberos-auth \
+    --enable-negotiate-auth \
+    --without-apple-idn \
     --without-brotli \
+    --without-fish-functions-dir \
     --without-libidn2 \
     --without-libpsl \
     --without-librtmp \
+    --without-libssh \
     --without-libssh2 \
+    --without-libuv \
+    --without-msh3 \
     --without-nghttp2 \
-    --with-gssapi
+    --without-nghttp3 \
+    --without-ngtcp2 \
+    --without-openssl-quic \
+    --without-quiche \
+    --without-zsh-functions-dir \
+    --without-zstd \
+    --with-gssapi \
+    --with-openssl
   unset KRB5CONFIG
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
@@ -1098,11 +1129,12 @@ build_postgres() {
   mkdir -p $POSTGRES_BDIR
   pushd $POSTGRES_BDIR
 
-  # We don't need readline and zlib, so let's simplify build.
+  # We don't need readline, zlib and icu, so let's simplify build.
   CFLAGS="$EXTRA_CFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     $POSTGRES_SOURCE/configure \
     --prefix=$PREFIX \
+    --without-icu \
     --without-readline \
     --without-zlib
 

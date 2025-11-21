@@ -1,12 +1,13 @@
---- a/configure.ac	2021-04-14 12:03:20.819257209 -0700
-+++ b/configure.ac	2021-04-14 12:27:51.050220736 -0700
-@@ -1715,9 +1715,13 @@
+--- a/m4/curl-openssl.m4	2024-12-11 18:13:35
++++ b/m4/curl-openssl.m4	2024-12-11 18:15:27
+@@ -137,10 +137,14 @@
      fi
    fi
  
 -  dnl finally, set flags to use SSL
 -  CPPFLAGS="$CPPFLAGS $SSL_CPPFLAGS"
 -  LDFLAGS="$LDFLAGS $SSL_LDFLAGS"
+-  LDFLAGSPC="$LDFLAGSPC $SSL_LDFLAGS"
 +  dnl Finally, set flags to use SSL.
 +  dnl If another version of OpenSSL library is present under the 'standard'
 +  dnl system paths, it's necessary to pick up the header and binary files
@@ -14,6 +15,7 @@
 +  dnl for both the preprocessor and the linker.
 +  CPPFLAGS="$SSL_CPPFLAGS $CPPFLAGS"
 +  LDFLAGS="$SSL_LDFLAGS $LDFLAGS"
++  LDFLAGSPC="$SSL_LDFLAGS $LDFLAGSPC"
  
    AC_CHECK_LIB(crypto, HMAC_Update,[
-      HAVECRYPTO="yes"
+     HAVECRYPTO="yes"

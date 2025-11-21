@@ -6,7 +6,8 @@ repositories {
 
     mavenCentral()
     mavenLocal()
-    maven { url "https://repo1.acceldata.dev/repository/odp-release/" }
+    maven { url "https://repo1.acceldata.dev/repository/odp-central/" }
+    maven { url "https://repo1.acceldata.dev/repository/odp-central/" }
 }
 configurations.all {
     transitive = false
@@ -24,6 +25,7 @@ dependencies {
     download "com.google.guava:guava:${guavaVersion}-jre"
     download "org.apache.hadoop:hadoop-auth:${hadoopVersion}"
     download "org.apache.hadoop:hadoop-common:${hadoopVersion}"
+    download "org.apache.hadoop:hadoop-hdfs-client:${hadoopVersion}"
     download "org.apache.htrace:htrace-core4:${htracecoreVersion}"
     download "org.apache.ranger:credentialbuilder:${rangerVersion}"
     download "org.apache.ranger:ranger-plugins-installer:${rangerVersion}"
