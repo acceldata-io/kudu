@@ -183,7 +183,7 @@ URL = 'http://kudu.apache.org/'
 
 setup(
     name="kudu-python",
-    packages=['kudu', 'kudu.tests'],
+    packages=['kudu'],
     version=VERSION,
     package_data={'kudu': ['*.pxd', '*.pyx']},
     ext_modules=extensions,
@@ -194,7 +194,8 @@ setup(
     # pytest-runner 5.3.0 [1] started requiring python 3.6 or later.
     #
     # 1. https://github.com/pytest-dev/pytest-runner/blob/v5.3.0/CHANGES.rst
-    setup_requires=['pytest-runner <5.3.0'],
+	# Disabled for Centos 7
+    #setup_requires=['pytest-runner <5.3.0'],
 
     # Note: dependencies in tests_require should also be listed in
     # requirements.txt so that dependencies aren't downloaded at test-time
@@ -205,8 +206,9 @@ setup(
     #
     # 1. https://docs.pytest.org/en/latest/changelog.html#id164
     # 2. https://pypi.org/project/pytest-timeout/#id5
-    tests_require=['pytest >=2.8,<3.3',
-                   'pytest-timeout >=1.1.0,<1.2.1'],
+	# Disabled for Centos 7
+    #tests_require=['pytest >=2.8,<3.3',
+    #               'pytest-timeout >=1.1.0,<1.2.1'],
 
     install_requires=['cython >= 0.21', 'pytz; python_version < "3.9.0"', 'six'],
     description=DESCRIPTION,
