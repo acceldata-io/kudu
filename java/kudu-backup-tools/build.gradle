@@ -1,0 +1,56 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+apply plugin: "scala"
+apply from: "$rootDir/gradle/shadow.gradle"
+
+dependencies {
+  implementation project(path: ":kudu-backup-common")
+  implementation project(path: ":kudu-client", configuration: "shadow")
+  implementation libs.protobufJava
+  implementation (libs.scopt)  {
+    // Make sure wrong Scala version is not pulled in.
+    exclude group: "org.scala-lang", module: "scala-library"
+  }
+  implementation libs.scalaLibrary
+  implementation libs.slf4jApi
+
+  compileOnly libs.hadoopClient
+
+  implementation libs.yetusAnnotations
+
+  testImplementation project(path: ":kudu-test-utils", configuration: "shadow")
+  testImplementation libs.hadoopMiniCluster
+  testImplementation libs.junit
+  testImplementation libs.scalatest
+}
+
+shadowJar {
+  dependencies {
+    minimize()
+  }
+}
+
+// kudu-backup-tools has no public Javadoc.
+javadoc {
+  enabled = false
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+  // This class causes SpotBugs runtime errors, so we completely ignore it from analysis.
+  classes = classes.filter { !it.path.contains("BaseTestKuduBackupCleaner") }
+}

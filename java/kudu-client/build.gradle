@@ -1,0 +1,56 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+apply from: "$rootDir/gradle/shadow.gradle"
+apply from: "$rootDir/gradle/benchmarks.gradle"
+
+dependencies {
+  implementation project(path: ":kudu-proto")
+  implementation libs.protobufJava
+
+  // Not shaded in the client JAR because it's part of the public API.
+  compileUnshaded (libs.async) {
+    // async uses versions ranges for slf4j making builds non-deterministic.
+    // Remove this once the following is merged: https://github.com/OpenTSDB/async/pull/8
+    exclude group: "org.slf4j", module: "slf4j-api"
+  }
+  compileUnshaded libs.slf4jApi
+
+  implementation (libs.guava) {
+    exclude(group: "com.google.errorprone")
+  }
+  implementation libs.micrometerCore
+  implementation libs.murmur
+  implementation libs.netty
+
+  compileOnly libs.jsr305
+  compileOnly libs.yetusAnnotations
+
+  testImplementation project(":kudu-test-utils")
+  testImplementation libs.junit
+  testImplementation libs.log4jApi
+  testImplementation libs.log4jCore
+  testImplementation libs.log4jSlf4jImpl
+  testImplementation libs.mockitoCore
+
+  shadowJar {
+    dependencies {
+      exclude(dependency(libs.jsr305))
+    }
+    minimize()
+  }
+}
