@@ -76,7 +76,7 @@ if (gradle.gradleVersion != versions.gradle) {
 if (propertyExists("spark2")) {
   versions["spark"] = "$versions.spark2"
   versions["scala"] = "$versions.scala211"
-}`
+}
 
 // Add base Scala version
 versions["scalaBase"] = versions.scala.substring(0, versions.scala.lastIndexOf("."))
