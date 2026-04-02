@@ -63,7 +63,7 @@ versions += [
     spark          : "3.5.5.3.2.3.5-2",
     spotBugs       : "4.1.1",
     yetus          : "0.13.0",
-    zookeeper      : "3.5.10.3.2.3.5-3"
+    zookeeper      : "3.5.10.3.2.3.5-2"
 ]
 
 // Log the Gradle version used vs defined.
