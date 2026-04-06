@@ -77,6 +77,7 @@ subprojects {
       force "org.yaml:snakeyaml:2.0"
       force "org.apache.zookeeper:zookeeper:$versions.zookeeper"
       force "com.google.protobuf:protobuf-java:$versions.protobuf"
+      force "io.airlift:aircompressor:$versions.aircompressor"
     }
   }
 }
