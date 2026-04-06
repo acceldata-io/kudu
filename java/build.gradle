@@ -78,6 +78,7 @@ subprojects {
       force "org.apache.zookeeper:zookeeper:$versions.zookeeper"
       force "com.google.protobuf:protobuf-java:$versions.protobuf"
       force "io.airlift:aircompressor:$versions.aircompressor"
+      force "dnsjava:dnsjava:$versions.dnsjava"
     }
   }
 }
