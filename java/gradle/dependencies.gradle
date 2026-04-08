@@ -26,10 +26,12 @@ ext {
 
 versions += [
     async          : "1.4.1",
+    aircompressor  : "0.27",
     checkstyle     : "8.36.1",
     clojure        : "1.10.3",
     clojureToolsCli: "1.0.206",
     commonsIo      : "2.14.0",
+    dnsjava        : "3.6.0",
     errorProne     : "2.3.3",
     errorProneJavac: "9+181-r4173-1",
     gradle         : "7.6.4",
