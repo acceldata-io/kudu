@@ -38,6 +38,11 @@ dependencies {
   testImplementation libs.log4jSlf4jImpl
 }
 
+configurations.all {
+  resolutionStrategy {
+    force "io.airlift:aircompressor:2.0.3"
+  }
+}
 shadowJar {
   dependencies {
     exclude(dependency("com.fasterxml.jackson.core::.*"))

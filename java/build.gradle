@@ -74,6 +74,12 @@ subprojects {
       force "com.fasterxml.jackson.core:jackson-core:2.16.1"
       force "com.fasterxml.jackson.core:jackson-databind:2.16.1"
       force "com.fasterxml.jackson.core:jackson-annotations:2.16.1"
+      force "org.yaml:snakeyaml:2.0"
+      force "com.microsoft.sqlserver:mssql-jdbc:11.2.4.jre8"
+      force "org.apache.zookeeper:zookeeper:$versions.zookeeper"
+      force "com.google.protobuf:protobuf-java:$versions.protobuf"
+      force "io.airlift:aircompressor:$versions.aircompressor"
+      force "dnsjava:dnsjava:$versions.dnsjava"
     }
   }
 }
