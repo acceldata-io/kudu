@@ -37,7 +37,7 @@ versions += [
     hadoop         : "3.3.6.3.3.6.4-1000",
     hamcrest       : "2.2",
     hdrhistogram   : "2.1.12",
-    hive           : "4.0.1.3.3.6.4-1000",
+    hive           : "4.1.0.3.3.6.4-1000",
     httpClient     : "4.5.13",
     jacoco         : "0.8.6",
     jepsen         : "0.1.5",
