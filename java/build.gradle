@@ -81,6 +81,9 @@ subprojects {
       force "io.airlift:aircompressor:$versions.aircompressor"
       force "dnsjava:dnsjava:$versions.dnsjava"
     }
+    resolutionStrategy.capabilitiesResolution.withCapability("org.lz4:lz4-java") {
+      select("org.lz4:lz4-java:1.8.1")
+    }
   }
 }
 
