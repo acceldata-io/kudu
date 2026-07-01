@@ -80,6 +80,20 @@ subprojects {
       force "com.google.protobuf:protobuf-java:$versions.protobuf"
       force "io.airlift:aircompressor:$versions.aircompressor"
       force "dnsjava:dnsjava:$versions.dnsjava"
+
+      // Resolve org.lz4:lz4-java -> at.yawk.lz4:lz4-java capability conflict.
+      // Sonatype relocated org.lz4:lz4-java:1.8.1 to at.yawk.lz4:lz4-java:1.8.1
+      // as part of the CVE-2025-12183 fix; both declare the same Gradle
+      // capability, which Gradle can't auto-resolve (gradle/gradle#35916).
+      capabilitiesResolution {
+        withCapability("org.lz4:lz4-java") {
+          def toBeSelected = candidates.find { it.id.toString().startsWith("at.yawk.lz4") }
+          if (toBeSelected != null) {
+            select(toBeSelected)
+            because("org.lz4:lz4-java:1.8.1 relocation to at.yawk.lz4 per CVE-2025-12183")
+          }
+        }
+      }
     }
   }
 }
