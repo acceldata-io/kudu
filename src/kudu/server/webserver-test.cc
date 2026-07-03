@@ -399,9 +399,11 @@ TEST_P(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
 
 // Test some malformed authorization headers.
 TEST_P(SpnegoWebserverTest, TestInvalidHeaders) {
+  curl_.set_return_headers(true);
   EXPECT_EQ(curl_.FetchURL(url_, &buf_, { "Authorization: blahblah" }).ToString(),
-            "Remote error: HTTP 500");
+            "Remote error: HTTP 401");
   EXPECT_STR_CONTAINS(buf_.ToString(), "bad Negotiate header");
+  EXPECT_STR_CONTAINS(buf_.ToString(), "WWW-Authenticate: Negotiate");
   EXPECT_EQ(curl_.FetchURL(url_, &buf_, { "Authorization: Negotiate aaa" }).ToString(),
             "Remote error: HTTP 401");
   EXPECT_STR_CONTAINS(buf_.ToString(), "Not authorized");
@@ -616,15 +618,12 @@ TEST_P(PrometheusTokenWebserverTest, TestOptionsBypassesAuthOnPrometheusPath) {
 
 // The bearer token only bypasses SPNEGO on Prometheus paths; other paths
 // still require SPNEGO. Even a valid Prometheus bearer token is ignored on
-// non-Prometheus paths and the request is rejected.
-// TODO(KUDU-3777): once that bug is fixed the response code will be 401;
-// for now a Bearer header on a non-Prometheus path falls into the SPNEGO
-// error path which returns 500 for a non-Negotiate Authorization scheme.
+// non-Prometheus paths and the request is rejected with a 401.
 TEST_P(PrometheusTokenWebserverTest, TestTokenDoesNotBypassSpnegoOnOtherPaths) {
   string auth_header = Substitute("Authorization: Bearer $0", kPrometheusToken);
   Status s = curl_.FetchURL(url_, &buf_, {auth_header});
   ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "500");
+  ASSERT_STR_CONTAINS(s.ToString(), "401");
   ASSERT_STR_CONTAINS(buf_.ToString(), "bad Negotiate header");
 }
 
@@ -635,10 +634,10 @@ TEST_P(PrometheusTokenWebserverTest, TestInvalidSpnegoDeniedOnOtherPaths) {
   Status s = curl_.FetchURL(url_, &buf_, {"Authorization: Negotiate aaa"});
   ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "401");
-  // For an invalid SPNEGO token the server does not re-issue a
-  // WWW-Authenticate: Negotiate challenge (that only happens when no
-  // Authorization header is sent at all)
-  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "WWW-Authenticate: Negotiate");
+  // On any SPNEGO authentication failure, not just a missing header, the
+  // server re-issues the Negotiate challenge, so the client knows to
+  // restart authentication from scratch.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "WWW-Authenticate: Negotiate");
   // The response must not expose a Bearer challenge: the server should not
   // hint that a bearer token would work on this path.
   ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "WWW-Authenticate: Bearer");
