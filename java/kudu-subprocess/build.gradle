@@ -20,6 +20,11 @@ apply from: "$rootDir/gradle/shadow.gradle"
 // Explicitly allow slf4j to be included in this jar.
 shadowIncludeSlf4j = true
 
+// Needed after the Hive 4.1.0 bump increased the dependency footprint.
+shadowJar {
+  zip64 = true
+}
+
 dependencies {
   implementation project(path: ":kudu-proto")
   implementation(libs.hadoopCommon) {
