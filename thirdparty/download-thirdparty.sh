@@ -381,12 +381,11 @@ fetch_and_patch \
  $TRACE_VIEWER_SOURCE \
  $TRACE_VIEWER_PATCHLEVEL
 
-BOOST_PATCHLEVEL=1
+BOOST_PATCHLEVEL=0
 fetch_and_patch \
- boost_${BOOST_VERSION}.tar.gz \
+ boost-${BOOST_VERSION}-cmake.tar.gz \
  $BOOST_SOURCE \
- $BOOST_PATCHLEVEL \
- "patch -p0 < $TP_DIR/patches/boost-bootstrap.patch"
+ $BOOST_PATCHLEVEL
 
 BREAKPAD_PATCHLEVEL=8
 fetch_and_patch \

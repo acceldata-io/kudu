@@ -427,7 +427,7 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_CRCUTIL" ]; then
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CLIENT_ONLY" -o -n "$F_BOOST" ]; then
-  build_boost normal
+  build_boost
 fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_MUSTACHE" ]; then
@@ -617,7 +617,7 @@ if [ -n "$F_TSAN" -o -n "$F_CRCUTIL" ]; then
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_BOOST" ]; then
-  build_boost tsan
+  build_boost
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_MUSTACHE" ]; then

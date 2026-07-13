@@ -168,8 +168,29 @@ TRACE_VIEWER_VERSION=99efe2f56191867ba7bb602c7c227dea6d576d2f
 TRACE_VIEWER_NAME=kudu-trace-viewer-$TRACE_VIEWER_VERSION
 TRACE_VIEWER_SOURCE=$TP_SOURCE_DIR/$TRACE_VIEWER_NAME
 
-BOOST_VERSION=1_84_0
-BOOST_NAME=boost_$BOOST_VERSION
+# Since 1.91.0 version, the distro file for the Boost library is a git archive,
+# not a regular/legacy source distribution archive which targets b2-based build
+# and available at https://archives.boost.org/release. The git archive
+# allows for building the Boost library with standard cmake and GNU make tools,
+# so it's possible to install the result artifacts into a staging area with
+# a pre-defined PREFIX using the DESTDIR approach. This is important for
+# pre-built 3rd-party components since they have to have a pre-defined prefix
+# independent of the layout of the local Kudu workspace.
+#
+# At the time of writing this, it's possible to download git archives
+# for the Boost library from https://github.com/boostorg/boost/releases page.
+# For 1.91.0 it's sourced from:
+#   https://github.com/boostorg/boost/releases/download/boost-1.91.0-1/boost-1.91.0-1-cmake.tar.gz
+# In some cases, the original archive might require repackaging to conform to
+# the layout convention for $KUDU_HOME/thirdparty/{build,src} directories.
+# For example, it's done so for 1.91.0 release to remove the extra '-1' suffix.
+#
+# References:
+#   https://www.boost.org/doc/user-guide/getting-started.html
+#   https://github.com/boostorg/cmake
+#   https://www.boost.org/doc/user-guide/building-with-cmake.html
+BOOST_VERSION=1.91.0
+BOOST_NAME=boost-$BOOST_VERSION
 BOOST_SOURCE=$TP_SOURCE_DIR/$BOOST_NAME
 
 # The breakpad source artifact is created using the script found in
