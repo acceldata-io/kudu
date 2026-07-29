@@ -69,6 +69,9 @@ subprojects {
   // Force gradle to use the same (declared in dependencies) guava version everywhere
   configurations.all {
     resolutionStrategy {
+      capabilitiesResolution.withCapability("org.lz4:lz4-java") {
+        select("org.lz4:lz4-java:1.8.1")
+      }
       force libs.guava
       // Force Jackson libraries to version 2.16.1 to override transitive dependencies
       force "com.fasterxml.jackson.core:jackson-core:2.16.1"
