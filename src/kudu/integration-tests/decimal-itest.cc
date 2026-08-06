@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <type_traits>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -120,7 +119,7 @@ TEST_F(DecimalItest, TestDecimalTypes) {
   ASSERT_OK(write->SetUnscaledDecimal("money", 123400));
   // Test a value thats too large
   Status s = write->SetUnscaledDecimal("small", 999);
-  EXPECT_EQ("Invalid argument: value 999 out of decimal range for column 'small'",
+  EXPECT_EQ("Invalid argument: value 999 out of range for decimal column 'small'",
             s.ToString());
   ASSERT_OK(session->Apply(insert));
   ASSERT_OK(session->Flush());
