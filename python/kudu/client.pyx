@@ -34,7 +34,6 @@ from kudu.errors cimport check_status
 from kudu.util import to_unixtime_micros, from_unixtime_micros, \
     from_hybridtime, to_unscaled_decimal, from_unscaled_decimal, \
     unix_epoch_days_to_date, date_to_unix_epoch_days
-from decimal import Decimal
 from errors import KuduException
 
 import six
@@ -2056,8 +2055,6 @@ cdef class Row:
             vector[double] cpp_data_double
             vector[Slice] cpp_data_slice
             vector[c_bool] cpp_validity
-            int8_t precision
-            int8_t scale
             size_t j
             list result
 
@@ -2130,26 +2127,6 @@ cdef class Row:
             for j in range(cpp_data_slice.size()):
                 result.append(frombytes(cpp_data_slice[j].ToString()) if cpp_validity[j] else None)
             return result
-
-        elif elem_type == KUDU_DECIMAL:
-            # Determine element precision/scale from projection schema
-            precision = self.parent.batch.projection_schema().Column(i).type_attributes().precision()
-            scale = self.parent.batch.projection_schema().Column(i).type_attributes().scale()
-
-            if precision <= 9:
-                check_status(self.row.GetArrayUnscaledDecimal(i, &cpp_data_int32, &cpp_validity))
-                result = []
-                for j in range(cpp_data_int32.size()):
-                    result.append(from_unscaled_decimal(cpp_data_int32[j], scale) if cpp_validity[j] else None)
-                return result
-            elif precision <= 18:
-                check_status(self.row.GetArrayUnscaledDecimal(i, &cpp_data_int64, &cpp_validity))
-                result = []
-                for j in range(cpp_data_int64.size()):
-                    result.append(from_unscaled_decimal(cpp_data_int64[j], scale) if cpp_validity[j] else None)
-                return result
-            else:
-                raise TypeError("Unsupported DECIMAL array precision: {0}".format(precision))
 
         elif elem_type == KUDU_UNIXTIME_MICROS:
             check_status(self.row.GetArrayUnixTimeMicros(i, &cpp_data_int64, &cpp_validity))
@@ -3446,16 +3423,9 @@ cdef class PartialRow:
             Slice slc
             bytes encoded_str
             DataType elem_type
-            int8_t precision
-            int8_t scale
-            ColumnSchema py_col
-            size_t array_len
 
         if not isinstance(value, (list, tuple)):
             raise TypeError("Array values must be a list or tuple, got {0}".format(type(value)))
-
-        array_len = len(value)
-        cpp_validity.reserve(array_len)
 
         for elem in value:
             cpp_validity.push_back(elem is not None)
@@ -3464,7 +3434,6 @@ cdef class PartialRow:
         elem_type = self._get_array_element_type(i)
 
         if elem_type == KUDU_BOOL:
-            cpp_values_bool.reserve(array_len)
             for elem in value:
                 if elem is None:
                     # Dummy value for NULL
@@ -3474,7 +3443,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayBool(i, cpp_values_bool, cpp_validity))
 
         elif elem_type == KUDU_INT8:
-            cpp_values_int8.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_int8.push_back(0)
@@ -3483,7 +3451,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayInt8(i, cpp_values_int8, cpp_validity))
 
         elif elem_type == KUDU_INT16:
-            cpp_values_int16.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_int16.push_back(0)
@@ -3492,7 +3459,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayInt16(i, cpp_values_int16, cpp_validity))
 
         elif elem_type == KUDU_INT32:
-            cpp_values_int32.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_int32.push_back(0)
@@ -3501,7 +3467,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayInt32(i, cpp_values_int32, cpp_validity))
 
         elif elem_type == KUDU_INT64:
-            cpp_values_int64.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_int64.push_back(0)
@@ -3510,7 +3475,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayInt64(i, cpp_values_int64, cpp_validity))
 
         elif elem_type == KUDU_FLOAT:
-            cpp_values_float.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_float.push_back(0.0)
@@ -3519,7 +3483,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayFloat(i, cpp_values_float, cpp_validity))
 
         elif elem_type == KUDU_DOUBLE:
-            cpp_values_double.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_double.push_back(0.0)
@@ -3528,7 +3491,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayDouble(i, cpp_values_double, cpp_validity))
 
         elif elem_type == KUDU_STRING:
-            cpp_values_slice.reserve(array_len)
             encoded_strings = []
             for elem in value:
                 if elem is None:
@@ -3546,7 +3508,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayString(i, cpp_values_slice, cpp_validity))
 
         elif elem_type == KUDU_BINARY:
-            cpp_values_slice.reserve(array_len)
             binary_data = []
             for elem in value:
                 if elem is None:
@@ -3562,7 +3523,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayBinary(i, cpp_values_slice, cpp_validity))
 
         elif elem_type == KUDU_VARCHAR:
-            cpp_values_slice.reserve(array_len)
             encoded_strings = []
             for elem in value:
                 if elem is None:
@@ -3580,7 +3540,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayVarchar(i, cpp_values_slice, cpp_validity))
 
         elif elem_type == KUDU_UNIXTIME_MICROS:
-            cpp_values_int64.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_int64.push_back(0)
@@ -3589,7 +3548,6 @@ cdef class PartialRow:
             check_status(self.row.SetArrayUnixTimeMicros(i, cpp_values_int64, cpp_validity))
 
         elif elem_type == KUDU_DATE:
-            cpp_values_int32.reserve(array_len)
             for elem in value:
                 if elem is None:
                     cpp_values_int32.push_back(0)
@@ -3597,31 +3555,6 @@ cdef class PartialRow:
                     val = date_to_unix_epoch_days(elem)
                     cpp_values_int32.push_back(<int32_t>val)
             check_status(self.row.SetArrayDate(i, cpp_values_int32, cpp_validity))
-        elif elem_type == KUDU_DECIMAL:
-            # Determine element precision/scale from schema
-            py_col = self.schema[i]
-            precision = py_col.type_attributes.precision
-            scale = py_col.type_attributes.scale
-            if precision <= 9:
-                cpp_values_int32.reserve(array_len)
-                for elem in value:
-                    if elem is None:
-                        cpp_values_int32.push_back(0)
-                    else:
-                        # Match scalar decimal semantics: rely on the value's own exponent
-                        cpp_values_int32.push_back(<int32_t>to_unscaled_decimal(elem))
-                check_status(self.row.SetArrayUnscaledDecimal(i, cpp_values_int32, cpp_validity))
-            elif precision <= 18:
-                cpp_values_int64.reserve(array_len)
-                for elem in value:
-                    if elem is None:
-                        cpp_values_int64.push_back(0)
-                    else:
-                        # Match scalar decimal semantics: rely on the value's own exponent
-                        cpp_values_int64.push_back(<int64_t>to_unscaled_decimal(elem))
-                check_status(self.row.SetArrayUnscaledDecimal(i, cpp_values_int64, cpp_validity))
-            else:
-                raise TypeError("Unsupported DECIMAL array precision: {0}".format(precision))
         else:
             raise TypeError("Unsupported array element type: {0}".format(_type_names.get(elem_type, elem_type)))
 
