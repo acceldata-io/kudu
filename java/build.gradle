@@ -72,7 +72,7 @@ subprojects {
       // Force Jackson libraries to version 2.21.4 to override transitive dependencies
       force "com.fasterxml.jackson.core:jackson-core:2.21.4"
       force "com.fasterxml.jackson.core:jackson-databind:2.21.4"
-      force "com.fasterxml.jackson.core:jackson-annotations:2.21.4"
+      force "com.fasterxml.jackson.core:jackson-annotations:2.21"
     }
   }
 }
