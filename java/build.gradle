@@ -69,6 +69,16 @@ subprojects {
   configurations.all {
     resolutionStrategy {
       force libs.guava
+
+      // Spark's dependencies pull in both org.lz4:lz4-java and at.yawk.lz4:lz4-java,
+      // which both provide the same "org.lz4:lz4-java" capability. Tell Gradle to
+      // prefer the org.lz4 coordinate so the conflict resolves instead of failing.
+      capabilitiesResolution {
+        withCapability("org.lz4:lz4-java") {
+          def orgLz4 = candidates.find { it.id.toString().startsWith("org.lz4:") }
+          select(orgLz4 ?: candidates.first())
+        }
+      }
     }
   }
 }
