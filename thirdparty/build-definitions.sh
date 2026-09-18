@@ -1206,7 +1206,11 @@ build_oatpp(){
     -DOATPP_DISABLE_ENV_OBJECT_COUNTERS=ON \
     -DOATPP_BUILD_TESTS=OFF \
     $OATPP_SOURCE
-  make MAKELEVEL=0 install
+  if [[ -n "$OS_UBUNTU" ]] || grep -qi '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+    make MAKELEVEL=0 install
+  else
+    make -j$PARALLEL MAKELEVEL=0 install
+  fi
   popd
 }
 
