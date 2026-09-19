@@ -1190,7 +1190,11 @@ build_postgres() {
     --without-readline \
     --without-zlib
 
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  if [[ -n "$OS_UBUNTU" ]] || grep -qi '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+    make MAKELEVEL=0 install
+  else
+    make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  fi
   popd
 }
 
@@ -1206,7 +1210,12 @@ build_oatpp(){
     -DOATPP_DISABLE_ENV_OBJECT_COUNTERS=ON \
     -DOATPP_BUILD_TESTS=OFF \
     $OATPP_SOURCE
-  make -j$PARALLEL install
+    
+  if [[ -n "$OS_UBUNTU" ]] || grep -qi '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+    make MAKELEVEL=0 install
+  else
+    make -j$PARALLEL MAKELEVEL=0 install
+  fi
   popd
 }
 
