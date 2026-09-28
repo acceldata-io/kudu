@@ -1,0 +1,10 @@
+--- a/table/block_based/data_block_hash_index.h
++++ b/table/block_based/data_block_hash_index.h
+@@ -6,6 +6,7 @@
+
+ #pragma once
+
++#include <cstdint>
+ #include <string>
+ #include <vector>
+
