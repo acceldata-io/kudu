@@ -369,7 +369,7 @@ fetch_and_patch \
  $BOOST_SOURCE \
  $BOOST_PATCHLEVEL
 
-BREAKPAD_PATCHLEVEL=4
+BREAKPAD_PATCHLEVEL=5
 fetch_and_patch \
  breakpad-${BREAKPAD_VERSION}.tar.gz \
  $BREAKPAD_SOURCE \
@@ -377,7 +377,8 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch" \
  "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch" \
  "patch -p0 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch" \
- "patch -p1 < $TP_DIR/patches/breakpad-gcc14-cstdint.patch"
+ "patch -p1 < $TP_DIR/patches/breakpad-gcc14-cstdint.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-gcc14-cstring.patch"
 
 SPARSEHASH_PATCHLEVEL=3
 fetch_and_patch \

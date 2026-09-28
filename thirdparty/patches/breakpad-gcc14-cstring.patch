@@ -1,0 +1,10 @@
+--- a/src/common/linux/guid_creator.cc
++++ b/src/common/linux/guid_creator.cc
+@@ -37,6 +37,7 @@
+ #include <assert.h>
+ #include <fcntl.h>
+ #include <pthread.h>
++#include <cstring>
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <sys/stat.h>
