@@ -23,6 +23,12 @@ shadowIncludeSlf4j = true
 // Needed after the Hive 4.1.0 bump increased the dependency footprint.
 shadowJar {
   zip64 = true
+  // dnsjava registers DnsjavaInetAddressResolverProvider as a service, but the
+  // class only exists under META-INF/versions/18 and this jar is not marked
+  // Multi-Release. JDK 18+ reads the service entry on the first host lookup,
+  // cannot load the class, and the Ranger subprocess exits, aborting the master.
+  // Drop the entry so the JDK default resolver is used.
+  exclude 'META-INF/services/java.net.spi.InetAddressResolverProvider'
 }
 
 dependencies {

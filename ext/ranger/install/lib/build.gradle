@@ -31,6 +31,19 @@ dependencies {
     download "org.slf4j:slf4j-api:${slf4japiVersion}"
     download "org.codehaus.woodstox:stax2-api:${stax2apiVersion}"
     download "com.fasterxml.woodstox:woodstox-core:${woodstoxcoreVersion}"
+    // Ranger audit destinations. The kudu-subprocess jar only carries the audit core, so without
+    // these Kudu has no HDFS or Solr audit (ClassNotFoundException ...AuditDestination).
+    // SolrJ's dependencies are listed because the subprocess jar relocates org.apache.http /
+    // org.apache.commons and only has Jetty's server side.
+    download "org.apache.ranger:ranger-audit-dest-hdfs:${rangerVersion}"
+    download "org.apache.ranger:ranger-audit-dest-solr:${rangerVersion}"
+    download "org.apache.solr:solr-solrj:${solrjVersion}"
+    download "org.apache.httpcomponents:httpclient:${httpclientVersion}"
+    download "org.apache.httpcomponents:httpcore:${httpcoreVersion}"
+    download "org.apache.httpcomponents:httpmime:${httpmimeVersion}"
+    download "org.eclipse.jetty:jetty-client:${jettyclientVersion}"
+    download "commons-io:commons-io:${commonsioVersion}"
+    download "commons-codec:commons-codec:${commonscodecVersion}"
 }
 task downloadJars(type: Copy) {
     dependsOn tasks.named("clean")
