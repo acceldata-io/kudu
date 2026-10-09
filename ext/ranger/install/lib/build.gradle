@@ -43,6 +43,7 @@ dependencies {
     download "org.apache.httpcomponents:httpmime:${httpmimeVersion}"
     download "org.eclipse.jetty:jetty-client:${jettyclientVersion}"
     download "commons-io:commons-io:${commonsioVersion}"
+    download "commons-codec:commons-codec:${commonscodecVersion}"
 }
 task downloadJars(type: Copy) {
     dependsOn tasks.named("clean")
