@@ -287,14 +287,14 @@ build_llvm() {
         TOOLS_ARGS="$TOOLS_ARGS -DGCC_INSTALL_PREFIX=$GCC_INSTALL_PREFIX"
       fi
 
-      if [ -n "$OS_OSX" ]; then
-        # Xcode 12.2 fails to build the sanitizers and they are not needed.
-        # We disable them as a workaround to the build issues.
-        # Disable the sanitizers and xray to prevent sanitizer_common compilation.
-        # See https://github.com/llvm-mirror/compiler-rt/blob/749af53928a31afa3111f27cc41fd15849d86667/lib/CMakeLists.txt#L11-L14
-        TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
-        TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_BUILD_XRAY=OFF"
+      # Disable the sanitizers and xray to prevent sanitizer_common compilation.
+      # Originally disabled only on macOS (Xcode 12.2 build issues), but also needed
+      # on Linux with GCC 14+ due to stricter header requirements in LLVM 11.
+      # See https://github.com/llvm-mirror/compiler-rt/blob/749af53928a31afa3111f27cc41fd15849d86667/lib/CMakeLists.txt#L11-L14
+      TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_BUILD_SANITIZERS=OFF"
+      TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_BUILD_XRAY=OFF"
 
+      if [ -n "$OS_OSX" ]; then
         # Disable Apple platforms the we do not support.
         TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_ENABLE_IOS=OFF"
         TOOLS_ARGS="$TOOLS_ARGS -DCOMPILER_RT_ENABLE_WATCHOS=OFF"

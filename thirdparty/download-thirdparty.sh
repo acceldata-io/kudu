@@ -268,14 +268,15 @@ fetch_and_patch \
  $LIBEV_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/libev-c17.patch"
 
-RAPIDJSON_PATCHLEVEL=3
+RAPIDJSON_PATCHLEVEL=4
 fetch_and_patch \
  rapidjson-${RAPIDJSON_VERSION}.zip \
  $RAPIDJSON_SOURCE \
  $RAPIDJSON_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch" \
  "patch -p1 < $TP_DIR/patches/rapidjson-assertions-for-clang-warnings.patch" \
- "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch"
+ "patch -p1 < $TP_DIR/patches/rapidjson-avoid-pointer-arithmetic-on-null-pointer.patch" \
+ "patch -p1 < $TP_DIR/patches/rapidjson-gcc14-const-member.patch"
 
 SQUEASEL_PATCHLEVEL=1
 fetch_and_patch \
@@ -332,7 +333,7 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=5
+LLVM_PATCHLEVEL=6
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
@@ -341,7 +342,8 @@ fetch_and_patch \
  "patch -d projects -p1 < $TP_DIR/patches/llvm-remove-cyclades-inclusion-in-sanitizer.patch" \
  "patch -p2 < $TP_DIR/patches/llvm-fix-missing-include.patch" \
  "patch -d projects -p1 < $TP_DIR/patches/llvm-Sanitizer-built-against-glibc-2_34-doesnt-work.patch" \
- "patch -d tools -p1 < $TP_DIR/patches/llvm-ignore-flto-values.patch"
+ "patch -d tools -p1 < $TP_DIR/patches/llvm-ignore-flto-values.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-gcc14-cstdint.patch"
 
 LZ4_PATCHLEVEL=0
 fetch_and_patch \
@@ -367,14 +369,16 @@ fetch_and_patch \
  $BOOST_SOURCE \
  $BOOST_PATCHLEVEL
 
-BREAKPAD_PATCHLEVEL=3
+BREAKPAD_PATCHLEVEL=5
 fetch_and_patch \
  breakpad-${BREAKPAD_VERSION}.tar.gz \
  $BREAKPAD_SOURCE \
  $BREAKPAD_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch" \
  "patch -p1 < $TP_DIR/patches/breakpad-syscall-rsp-clobber-fix.patch" \
- "patch -p0 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch"
+ "patch -p0 < $TP_DIR/patches/breakpad-SIGSTKSZ-error.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-gcc14-cstdint.patch" \
+ "patch -p1 < $TP_DIR/patches/breakpad-gcc14-cstring.patch"
 
 SPARSEHASH_PATCHLEVEL=3
 fetch_and_patch \
@@ -492,11 +496,12 @@ fetch_and_patch \
   $RANGER_KMS_SOURCE \
   $RANGER_KMS_PATCHLEVEL
 
-ROCKSDB_PATCHLEVEL=0
+ROCKSDB_PATCHLEVEL=1
 fetch_and_patch \
   $ROCKSDB_NAME.tar.gz \
   $ROCKSDB_SOURCE \
-  $ROCKSDB_PATCHLEVEL
+  $ROCKSDB_PATCHLEVEL \
+  "patch -p1 < $TP_DIR/patches/rocksdb-gcc14-cstdint.patch"
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
