@@ -1,0 +1,20 @@
+--- a/table/block_based/data_block_hash_index.h
++++ b/table/block_based/data_block_hash_index.h
+@@ -6,6 +6,7 @@
+
+ #pragma once
+
++#include <cstdint>
+ #include <string>
+ #include <vector>
+
+--- a/util/string_util.h
++++ b/util/string_util.h
+@@ -7,6 +7,7 @@
+
+ #pragma once
+
++#include <cstdint>
+ #include <sstream>
+ #include <string>
+ #include <unordered_map>
