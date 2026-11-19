@@ -1809,6 +1809,39 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
   }
 }
 
+// Regression test for an OOB write: a forged client schema that claims more
+// key columns than the tablet has must be rejected with MISMATCHED_SCHEMA
+// rather than crash the server.
+TEST_F(TabletServerTest, WriteWithForgedKeyColumnsDoesNotCrash) {
+  const Schema forged_extra_key({ ColumnSchema("key", INT32),
+                                  ColumnSchema("int_val", INT32) },
+                                /*key_columns=*/2);
+  for (auto op_type : { RowOperationsPB::DELETE, RowOperationsPB::UPDATE }) {
+    SCOPED_TRACE(RowOperationsPB::Type_Name(op_type));
+
+    WriteRequestPB req;
+    WriteResponsePB resp;
+    RpcController controller;
+    req.set_tablet_id(kTabletId);
+    ASSERT_OK(SchemaToPB(forged_extra_key, req.mutable_schema()));
+
+    KuduPartialRow row(&forged_extra_key);
+    ASSERT_OK(row.SetInt32("key", 12345));
+    ASSERT_OK(row.SetInt32("int_val", 1));
+    RowOperationsPBEncoder enc(req.mutable_row_operations());
+    enc.Add(op_type, row);
+
+    SCOPED_TRACE(SecureDebugString(req));
+    // The RPC returning at all is part of the assertion: without the fix the
+    // server crashes here.
+    ASSERT_OK(proxy_->Write(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(), "key column");
+  }
+}
+
 // Executes mutations each time a Tablet goes through a compaction/flush
 // lifecycle hook. This allows to create mutations of all possible types
 // deterministically. The purpose is to make sure such mutations are replayed
@@ -3154,6 +3187,47 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(50, results.size());
 }
+
+class DeprecatedPredicateTypeMismatchParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<bool> { // Use invalid column names for the predicates.
+};
+
+// Regression test for the deprecated range predicate type-mismatch crash.
+//
+// If we don't reject the request, it is easy to cause a crash.
+TEST_P(DeprecatedPredicateTypeMismatchParamTest, TestDeprecatedPredicateTypeMismatch) {
+  const bool invalid_column_name = GetParam();
+
+  InsertTestRowsDirect(0, 100);
+
+  ScanRequestPB req;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  req.set_batch_size_bytes(0);
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  const char* const col_a_name = invalid_column_name ? "not_a_column" : "string_val";
+  int64_t random_int_value = 42;
+
+  ColumnRangePredicatePB* pred_a = scan->add_deprecated_range_predicates();
+  pred_a->mutable_column()->set_name(col_a_name);
+  pred_a->mutable_column()->set_type(INT64);
+  pred_a->mutable_lower_bound()->append(reinterpret_cast<const char*>(&random_int_value),
+                                        sizeof(random_int_value));
+
+  ScanResponsePB resp;
+  RpcController rpc;
+  SCOPED_TRACE(SecureDebugString(req));
+  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+  SCOPED_TRACE(SecureDebugString(resp));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(TabletServerErrorPB::INVALID_SCAN_SPEC, resp.error().code());
+  ASSERT_EQ(AppStatusPB::INVALID_ARGUMENT, resp.error().status().code());
+}
+
+INSTANTIATE_TEST_SUITE_P(Params, DeprecatedPredicateTypeMismatchParamTest,
+                         ::testing::Bool());
 
 TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   InsertTestRowsDirect(0, 100);

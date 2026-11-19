@@ -110,6 +110,7 @@
 #include "kudu/master/table_locations_cache.h"
 #include "kudu/master/table_locations_cache_metrics.h"
 #include "kudu/master/table_metrics.h"
+#include "kudu/master/tablet_loader.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h" // IWYU pragma: keep
@@ -129,6 +130,7 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h" // IWYU pragma: keep
+#include "kudu/util/bitmap.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/debug/trace_event.h"
@@ -593,12 +595,12 @@ GROUP_FLAG_VALIDATOR(replication_factor_flags,
                      ValidateReplicationFactorFlags);
 } // anonymous namespace
 
+namespace kudu {
+namespace master {
+
 ////////////////////////////////////////////////////////////
 // Table Loader
 ////////////////////////////////////////////////////////////
-
-namespace kudu {
-namespace master {
 
 class TableLoader : public TableVisitor {
  public:
@@ -668,62 +670,6 @@ class TableLoader : public TableVisitor {
   CatalogManager *catalog_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TableLoader);
-};
-
-////////////////////////////////////////////////////////////
-// Tablet Loader
-////////////////////////////////////////////////////////////
-
-class TabletLoader : public TabletVisitor {
- public:
-  explicit TabletLoader(CatalogManager *catalog_manager)
-    : catalog_manager_(catalog_manager) {
-  }
-
-  Status VisitTablet(const string& table_id,
-                     const string& tablet_id,
-                     const SysTabletsEntryPB& metadata) override {
-    // Lookup the table.
-    scoped_refptr<TableInfo> table(FindPtrOrNull(
-        catalog_manager_->table_ids_map_, table_id));
-    if (table == nullptr) {
-      // Tables and tablets are always created/deleted in one operation, so
-      // this shouldn't be possible.
-      string msg = Substitute("Missing table $0 required by tablet $1 (metadata: $2)",
-                              table_id, tablet_id, SecureDebugString(metadata));
-      LOG(ERROR) << msg;
-      return Status::Corruption(msg);
-    }
-
-    // Set up the tablet info.
-    scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
-    TabletMetadataLock l(tablet.get(), LockMode::WRITE);
-    l.mutable_data()->pb.CopyFrom(metadata);
-
-    // Add the tablet to the tablet manager.
-    catalog_manager_->tablet_map_[tablet->id()] = tablet;
-
-    // Add the tablet to the table.
-    bool is_deleted = l.mutable_data()->is_deleted();
-    l.Commit();
-    if (!is_deleted) {
-      // Need to use a new tablet lock here because AddRemoveTablets() reads
-      // from clean state, which is uninitialized for these brand new tablets.
-      TabletMetadataLock l(tablet.get(), LockMode::READ);
-      table->AddRemoveTablets({ tablet }, {});
-      LOG(INFO) << Substitute("Loaded metadata for tablet $0 (table $1)",
-                              tablet_id, table->ToString());
-    }
-
-    VLOG(2) << Substitute("Metadata for tablet $0: $1",
-                          tablet_id, SecureShortDebugString(metadata));
-    return Status::OK();
-  }
-
- private:
-  CatalogManager *catalog_manager_;
-
-  DISALLOW_COPY_AND_ASSIGN(TabletLoader);
 };
 
 ////////////////////////////////////////////////////////////
@@ -2862,7 +2808,8 @@ Status CatalogManager::ApplyAlterSchemaSteps(
     const SysTablesEntryPB& current_pb,
     const vector<AlterTableRequestPB::Step>& steps,
     Schema* new_schema,
-    ColumnId* next_col_id) {
+    ColumnId* next_col_id,
+    bool* needs_range_bounds_refresh) {
   const SchemaPB& current_schema_pb = current_pb.schema();
   Schema cur_schema;
   RETURN_NOT_OK(SchemaFromPB(current_schema_pb, &cur_schema));
@@ -2938,6 +2885,15 @@ Status CatalogManager::ApplyAlterSchemaSteps(
   }
   *new_schema = builder.Build();
   *next_col_id = builder.next_column_id();
+
+  // KUDU-3577: check if the serialized representation of range partition keys
+  // has changed after updating the schema -- the size of the 'column_is_set'
+  // and the 'nullable' bitmaps might change upon adding or dropping columns
+  *needs_range_bounds_refresh =
+      !current_pb.partition_schema().custom_hash_schema_ranges().empty() &&
+      (new_schema->has_nullables() != cur_schema.has_nullables() ||
+       BitmapSize(new_schema->num_columns()) != BitmapSize(cur_schema.num_columns()));
+
   return Status::OK();
 }
 
@@ -3526,8 +3482,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // is essentialy a no-op. It's still important to execute because
   // ApplyAlterSchemaSteps populates 'new_schema', which is used below.
   TRACE("Apply alter schema");
+
+  // KUDU-3577: 'needs_range_bounds_refresh' reflects whether it's necessary
+  // to re-encode information on partition boundaries for ranges with custom
+  // hash schemas in the system catalog
+  bool needs_range_bounds_refresh = false;
   RETURN_NOT_OK(SetupError(
-        ApplyAlterSchemaSteps(l.data().pb, alter_schema_steps, &new_schema, &next_col_id),
+        ApplyAlterSchemaSteps(l.data().pb,
+                              alter_schema_steps,
+                              &new_schema,
+                              &next_col_id,
+                              &needs_range_bounds_refresh),
         resp, MasterErrorPB::INVALID_SCHEMA));
 
   DCHECK_NE(next_col_id, 0);
@@ -3670,6 +3635,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   }
 
   // 10. Serialize the schema and increment the version number.
+  if (needs_range_bounds_refresh) {
+    // KUDU-3577: if necessary, re-encode the information on partition
+    // boundaries for ranges with custom hash schemas
+    Schema cur_schema;  // the current table schema before being altered
+    RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &cur_schema));
+    PartitionSchema partition_schema;
+    RETURN_NOT_OK(PartitionSchema::FromPB(
+        l.data().pb.partition_schema(), cur_schema, &partition_schema));
+    RETURN_NOT_OK(partition_schema.ToPB(
+        new_schema, l.mutable_data()->pb.mutable_partition_schema()));
+  }
   if (has_metadata_changes_for_existing_tablets && !l.data().pb.has_fully_applied_schema()) {
     l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
   }

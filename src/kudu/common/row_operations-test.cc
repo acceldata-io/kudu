@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -49,6 +50,7 @@
 
 using std::shared_ptr;
 using std::string;
+using std::string_view;
 using std::vector;
 using strings::Substitute;
 
@@ -1003,6 +1005,79 @@ TEST_F(RowOperationsTest, ExceedCellLimit) {
     col_values[i] = too_long_string;
     NO_FATALS(CheckSplitExceedCellLimit(client_schema, col_values, Status::OK(), ""));
   }
+}
+
+TEST_F(RowOperationsTest, SchemasDoNotMatch) {
+  Schema client_schema({ ColumnSchema("key", INT32),
+                         ColumnSchema("int_val", INT32) },
+                       1);
+  SchemaBuilder server_schema_builder;
+  ASSERT_OK(server_schema_builder.AddKeyColumn("key", INT32));
+  ASSERT_OK(server_schema_builder.AddColumn("int_val", INT32));
+  ASSERT_OK(server_schema_builder.AddNullableColumn("string_val", STRING));
+  Schema server_schema = server_schema_builder.Build();
+
+  KuduPartialRow row(&client_schema);
+  ASSERT_OK(row.SetInt32("key", 1));
+  ASSERT_OK(row.SetInt32("int_val", 2));
+  RowOperationsPB pb;
+  RowOperationsPBEncoder(&pb).Add(RowOperationsPB::UPSERT, row);
+
+  arena_.Reset();
+  RowOperationsPBDecoder decoder(&pb, &client_schema, &server_schema, &arena_);
+  vector<DecodedRowOperation> ops;
+  ASSERT_OK(decoder.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
+  // The correct bitmap should be {1, 1, 0}.
+  ASSERT_EQ(1, ops.size());
+  ASSERT_TRUE(BitmapTest(ops[0].isset_bitmap, 0));
+  ASSERT_TRUE(BitmapTest(ops[0].isset_bitmap, 1));
+  ASSERT_FALSE(BitmapTest(ops[0].isset_bitmap, 2));
+}
+
+// Regression test for the out-of-bounds write with corrupted schema.
+TEST_F(RowOperationsTest, ForgedKeyColumnsDoNotMatchTablet) {
+  auto columns = vector<ColumnSchema>{ ColumnSchema("key1", INT32),
+                                 ColumnSchema("key2", INT32),
+                                 ColumnSchema("int_val", INT32)};
+  constexpr int kKeyColumnNum = 2;
+  SchemaBuilder builder;
+  for (size_t i = 0; i < columns.size(); i++) {
+    ASSERT_OK(builder.AddColumn(columns[i], /*is_key=*/ i < kKeyColumnNum));
+  }
+  Schema tablet_schema = builder.Build();
+
+  auto test_forged_schema = [&](const string_view& description,
+                                const Schema& client_schema,
+                                const string_view& expected_error) {
+    SCOPED_TRACE(description);
+
+    KuduPartialRow row(&client_schema);
+    // Values are irrelevant: the schema-level checks fire before per-op decode.
+    for (int i = 0; i < client_schema.num_key_columns(); i++) {
+      ASSERT_OK(row.SetInt32(i, 0));
+    }
+    RowOperationsPB pb;
+    RowOperationsPBEncoder(&pb).Add(RowOperationsPB::DELETE, row);
+
+    arena_.Reset();
+    RowOperationsPBDecoder decoder(
+        &pb, &client_schema, &tablet_schema, &arena_);
+    vector<DecodedRowOperation> ops;
+    const Status s = decoder.DecodeOperations<DecoderMode::WRITE_OPS>(&ops);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), expected_error);
+  };
+
+  // Test multiple forged schemas.
+  NO_FATALS(test_forged_schema("all columns as keys", Schema(columns, 3), "key columns"));
+  NO_FATALS(test_forged_schema("zero key columns", Schema(columns, 0), "key columns"));
+  NO_FATALS(test_forged_schema("keys in different order",
+      Schema({ columns[1], columns[0], columns[2] }, kKeyColumnNum),
+      "does not match the tablet key column"));
+  NO_FATALS(test_forged_schema("key column renamed",
+      Schema({ ColumnSchema("key1_renamed", columns[0].type_info()->type()), columns[1],
+               columns[2]}, kKeyColumnNum),
+      "not present in tablet"));
 }
 
 } // namespace kudu

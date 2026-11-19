@@ -34,6 +34,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/random.h"
@@ -140,6 +141,15 @@ class PlacementPolicyTest : public ::testing::Test {
       }
     }
     return Status::OK();
+  }
+
+  shared_ptr<TSDescriptor> SelectReplica(const TSDescriptorVector& source_ts_descs,
+                       const optional<string>& dimension,
+                       const optional<string>& range_key_start,
+                       const optional<string>& table_id,
+                       const std::set<shared_ptr<TSDescriptor>>& excluded) {
+    PlacementPolicy policy(descriptors_, &rng_);
+    return policy.SelectReplica(source_ts_descs, dimension, range_key_start, table_id, excluded);
   }
 
   static Status TSDescriptorVectorToMap(const TSDescriptorVector& v_descs,
@@ -1085,6 +1095,17 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRangesExtremeCase) {
     ASSERT_EQ(500, stats["ts0"]);
     ASSERT_EQ(500, stats["ts1"]);
   }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    const auto existing = GetDescriptors({"ts1"});
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    ASSERT_TRUE(extra_ts->permanent_uuid() == "ts0") << extra_ts->permanent_uuid();
+  }
 }
 
 // RF is equal to the number of tablet servers, so replica placement will be same with ranges.
@@ -1141,6 +1162,18 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRanges) {
     ASSERT_EQ(1000, stats["ts0"]);
     ASSERT_EQ(1000, stats["ts1"]);
     ASSERT_EQ(1000, stats["ts2"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    const auto existing = GetDescriptors({"ts2"});
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    const auto& ts_uuid = extra_ts->permanent_uuid();
+    ASSERT_TRUE(ts_uuid == "ts0" || ts_uuid == "ts1") << extra_ts->permanent_uuid();
   }
 }
 
@@ -1208,6 +1241,18 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRangesAndTables) {
     }
     ASSERT_LE(368, stats["ts3"]);
     ASSERT_GE(378, stats["ts3"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    const auto existing = GetDescriptors({"ts3"});
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    const auto& ts_uuid = extra_ts->permanent_uuid();
+    ASSERT_TRUE(ts_uuid == "ts0" || ts_uuid == "ts1") << extra_ts->permanent_uuid();
   }
 }
 
@@ -1287,6 +1332,20 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithRangesAndTablesWithDoubleTSer
     ASSERT_GE(274, stats["ts4"]);
     ASSERT_LE(137, stats["ts5"]);
     ASSERT_GE(147, stats["ts5"]);
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    const auto existing = GetDescriptors({"ts4", "ts5"});
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    const auto& ts_uuid = extra_ts->permanent_uuid();
+    ASSERT_TRUE(ts_uuid == "ts0" ||
+                ts_uuid == "ts1" ||
+                ts_uuid == "ts2") << extra_ts->permanent_uuid();
   }
 }
 
@@ -1377,68 +1436,165 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasWithImbalanceByTable) {
       },
   };
 
-  ASSERT_OK(Prepare(cluster_info));
-  const auto& all = descriptors();
-  PlacementPolicy policy(all, rng());
-  typedef std::unordered_map<string, std::unordered_map<string, int>> replicas_per_range_per_table;
-  std::unordered_map<string, replicas_per_range_per_table> stats;
-  vector<string> ranges = {"a1", "b1", "c1", "d1", "e1", "f1"};
-  vector<string> tables = {"t1", "t2"};
-  for (const auto& table : tables) {
-    for (const auto& range : ranges) {
-      for (auto i = 0; i < 500; ++i) {
-        TSDescriptorVector result;
-        ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, range, table, &result));
-        ASSERT_EQ(nReplicationFactor, result.size());
-        for (const auto& ts : result) {
-          const auto& ts_uuid = ts->permanent_uuid();
-          ++stats[ts_uuid][table][range];
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    typedef std::unordered_map<string, std::unordered_map<string, int>>
+    replicas_per_range_per_table;
+    std::unordered_map<string, replicas_per_range_per_table> stats;
+    vector<string> ranges = {"a1", "b1", "c1", "d1", "e1", "f1"};
+    vector<string> tables = {"t1", "t2"};
+    for (const auto& table : tables) {
+      for (const auto& range : ranges) {
+        for (auto i = 0; i < 500; ++i) {
+          TSDescriptorVector result;
+          ASSERT_OK(policy.PlaceTabletReplicas(nReplicationFactor, nullopt, range, table, &result));
+          ASSERT_EQ(nReplicationFactor, result.size());
+          for (const auto& ts : result) {
+            const auto& ts_uuid = ts->permanent_uuid();
+            ++stats[ts_uuid][table][range];
+          }
         }
       }
+    }
+
+    ASSERT_EQ(kNumServers, stats.size());
+    vector<string> balanced_ranges = {"c1", "d1", "e1", "f1"};
+    vector<string> tservers1 = {"ts0", "ts2", "ts4"};
+    for (const auto& stat : stats) {
+      int tserver_replicas = 0;
+      // Verifies that two tables exist on each tserver.
+      ASSERT_EQ(2, stat.second.size());
+      for (const auto& table : stat.second) {
+        // Verifies that the six ranges exist for each table on each tserver.
+        ASSERT_EQ(6, table.second.size());
+        for (const auto& ranges : table.second) {
+          if (std::find(balanced_ranges.begin(),
+                        balanced_ranges.end(), ranges.first) != balanced_ranges.end()) {
+            ASSERT_LE(245, ranges.second);
+            ASSERT_GE(255, ranges.second);
+          } else if (std::find(tservers1.begin(),
+                               tservers1.end(), stat.first) != tservers1.end()) {
+            // Only range of "a1" or "b1" now. Checks which tservers and for table "t1" or "t2".
+            if (table.first == "t1") {
+              ASSERT_LE(120, ranges.second);
+              ASSERT_GE(130, ranges.second);
+            } else {
+              ASSERT_LE(370, ranges.second);
+              ASSERT_GE(380, ranges.second);
+            }
+          } else {
+            // Ranges "a1" or "b1" for tservers "ts1", "ts3", "ts5". Checks for table "t1" or "t2".
+            if (table.first == "t1") {
+              ASSERT_LE(370, ranges.second);
+              ASSERT_GE(380, ranges.second);
+            } else {
+              ASSERT_LE(120, ranges.second);
+              ASSERT_GE(130, ranges.second);
+            }
+          }
+          tserver_replicas += ranges.second;
+        }
+      }
+      // Verifies that around 3000 replicas are placed on each tserver.
+      ASSERT_LE(2990, tserver_replicas);
+      ASSERT_GE(3110, tserver_replicas);
     }
   }
 
-  ASSERT_EQ(kNumServers, stats.size());
-  vector<string> balanced_ranges = {"c1", "d1", "e1", "f1"};
-  vector<string> tservers1 = {"ts0", "ts2", "ts4"};
-  for (const auto& stat : stats) {
-    int tserver_replicas = 0;
-    // Verifies that two tables exist on each tserver.
-    ASSERT_EQ(2, stat.second.size());
-    for (const auto& table : stat.second) {
-      // Verifies that the six ranges exist for each table on each tserver.
-      ASSERT_EQ(6, table.second.size());
-      for (const auto& ranges : table.second) {
-        if (std::find(balanced_ranges.begin(),
-                      balanced_ranges.end(), ranges.first) != balanced_ranges.end()) {
-          ASSERT_LE(245, ranges.second);
-          ASSERT_GE(255, ranges.second);
-        } else if (std::find(tservers1.begin(),
-                           tservers1.end(), stat.first) != tservers1.end()) {
-          // Only range of "a1" or "b1" now. Checks which tservers and for table "t1" or "t2".
-          if (table.first == "t1") {
-            ASSERT_LE(120, ranges.second);
-            ASSERT_GE(130, ranges.second);
-          } else {
-            ASSERT_LE(370, ranges.second);
-            ASSERT_GE(380, ranges.second);
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    const auto existing = GetDescriptors({"ts0", "ts2", "ts4"});
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    const auto& ts_uuid = extra_ts->permanent_uuid();
+    ASSERT_TRUE(ts_uuid == "ts1" ||
+                ts_uuid == "ts3" ||
+                ts_uuid == "ts5") << extra_ts->permanent_uuid();
+  }
+}
+
+TEST_F(PlacementPolicyTest, PlaceRangeAwareTabletReplicasWithLocations) {
+  TabletNumByRangeMap range_a({ {"a1", 2}});
+  TabletNumByRangeMap range_double_a({ {"a1", 4}});
+  TabletNumByRangeMap range_b({ {"b1", 2}});
+  TabletNumByRangeMap range_double_b({ {"b1", 2}});
+  TabletNumByRangeMap ranges_a_and_b({ {"a1", 2}, {"b1", 2} });
+  const vector<LocationInfo> cluster_info = {
+      { "A", { { "A_ts0", 4, { }, { {"t1", range_double_a }, } },
+               { "A_ts1", 4, { }, { {"t1", range_double_a }, } },
+               { "A_ts2", 4, { }, { {"t1", range_double_b }, } }, } },
+      { "B", { { "B_ts0", 4, { }, { {"t1", ranges_a_and_b }, } },
+               { "B_ts1", 4, { }, { {"t1", range_a}, {"t2", range_a} } }, } },
+      { "C", { { "C_ts0", 6, { }, { {"t1", range_a }, {"t2", ranges_a_and_b }, } },
+               { "C_ts1", 4, { }, { {"t1", range_a }, {"t2", range_b} } }, } },
+  };
+
+  // To avoid placing a majority of replicas in one location,
+  // exactly one replica will be placed in each location.
+  // "A_ts2" is chosen because it has the least replicas per range "a1" in table "t1".
+  // "B_ts1" is chosen because it wins the replicas per table tiebreaker with "B_ts0".
+  // "C_ts1" is chosen because it wins the total replicas tiebreaker.
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(3, nullopt, "a1", "t1", &result));
+    ASSERT_EQ(3, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(1, m.count("A_ts2"));
+    ASSERT_EQ(1, m.count("B_ts1"));
+    ASSERT_EQ(1, m.count("C_ts1"));
+  }
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    const auto& all = descriptors();
+    PlacementPolicy policy(all, rng());
+    const auto existing = GetDescriptors({"A_ts0", "A_ts1", "B_ts0", "B_ts1", "C_ts0", "C_ts1"});
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, nullopt, "a1", "t1", &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    ASSERT_TRUE(extra_ts->permanent_uuid() == "A_ts2") << extra_ts->permanent_uuid();
+  }
+}
+
+// This test is more granular and specifically tests SelectReplica() and its
+// various tiebreaker scenarios when choosing a tablet server to place a replica on.
+TEST_F(PlacementPolicyTest, TestSelectReplicaTieBreakers) {
+  constexpr int nReplicationFactor = 3;
+  TabletNumByRangeMap range({ {"a1", 100} });
+  TabletNumByRangeMap ranges({ {"a1", 100}, {"b1", 100} });
+  const vector<LocationInfo> cluster_info = {
+      {
+          "",
+          {
+              { "ts0", 200, { }, { {"t1", range }, {"t2", range }, } },
+              { "ts1", 100, { }, { {"t1", range }, } },
+              { "ts2", 200, { }, { {"t1", ranges }, } },
           }
-        } else {
-          // Ranges "a1" or "b1" for tservers "ts1", "ts3", "ts5". Checks for table "t1" or "t2".
-          if (table.first == "t1") {
-            ASSERT_LE(370, ranges.second);
-            ASSERT_GE(380, ranges.second);
-          } else {
-            ASSERT_LE(120, ranges.second);
-            ASSERT_GE(130, ranges.second);
-          }
-        }
-        tserver_replicas += ranges.second;
-      }
+      },
+  };
+
+  {
+    ASSERT_OK(Prepare(cluster_info));
+    std::set<shared_ptr<TSDescriptor>> selected;
+    // All tablet servers have the same number of replicas per range "a1" of table "t1".
+    // "ts1" is chosen first since it has the least number of replicas overall.
+    // "ts0" is chosen next since it has the least number of replicas of table "t1".
+    vector<string> chosen_tservers_in_order = {"ts1", "ts0", "ts2"};
+    for (int i = 0; i < nReplicationFactor; ++i) {
+      auto ts = SelectReplica(descriptors(), nullopt, "a1", "t1", selected);
+      ASSERT_TRUE(ts);
+      ASSERT_TRUE(ts->permanent_uuid() == chosen_tservers_in_order[i]) << ts->permanent_uuid();
+      EmplaceOrDie(&selected, std::move(ts));
     }
-    // Verifies that around 3000 replicas are placed on each tserver.
-    ASSERT_LE(2990, tserver_replicas);
-    ASSERT_GE(3110, tserver_replicas);
   }
 }
 

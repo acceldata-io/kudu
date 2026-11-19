@@ -1540,7 +1540,10 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   const auto& tablet_id = req->tablet_id();
   TRACE_EVENT1("tserver", "TabletServiceImpl::Write",
                "tablet_id", tablet_id);
-  DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
+  DVLOG(3) << Substitute("Received Write RPC: $0, requestor: $1, request id: $2",
+                        SecureDebugString(*req), context->requestor_string(),
+                        context->request_id() == nullptr ?
+                        "" : SecureDebugString(*context->request_id()));
   scoped_refptr<TabletReplica> replica;
   if (!LookupRunningTabletReplicaOrRespond(
         server_->tablet_manager(), tablet_id, resp, context, &replica)) {
@@ -2660,6 +2663,23 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
     }
     optional<ColumnSchema> col;
     RETURN_NOT_OK(ColumnSchemaFromPB(pred_pb.column(), &col));
+
+    // Check if the client used the correct type for the column.
+    const int32_t idx = tablet_schema.find_column(col->name());
+    if (PREDICT_FALSE(idx == Schema::kColumnNotFound)) {
+      return Status::InvalidArgument(
+        Substitute("Invalid predicate $0: unknown column",
+                   SecureShortDebugString(pred_pb)));
+    }
+    const ColumnSchema& column_schema = tablet_schema.column(idx);
+    if (PREDICT_FALSE(col->type_info()->type() != column_schema.type_info()->type())) {
+      return Status::InvalidArgument(
+        Substitute("Invalid predicate $0: column '$1' has type $2, not $3",
+                   SecureShortDebugString(pred_pb),
+                   column_schema.name(),
+                   column_schema.type_info()->name(),
+                   col->type_info()->name()));
+    }
 
     const void* lower_bound = nullptr;
     const void* upper_bound = nullptr;
