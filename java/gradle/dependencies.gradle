@@ -103,7 +103,6 @@ libs += [
     flinkStreamingJava   : "org.apache.flink:flink-streaming-java:$versions.flink",
     flinkConnectorKudu   : "org.apache.flink:flink-connector-kudu:$versions.flinkConnectorKudu",
     flinkTestUtils       : "org.apache.flink:flink-test-utils:$versions.flink",
-    flinkStreamingJava   : "org.apache.flink:flink-streaming-java:$versions.flink",
     guava                : "com.google.guava:guava:$versions.guava",
     hadoopClient         : "org.apache.hadoop:hadoop-client:$versions.hadoop",
     hadoopCommon         : "org.apache.hadoop:hadoop-common:$versions.hadoop",
